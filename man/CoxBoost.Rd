@@ -1,0 +1,77 @@
+\name{CoxBoost}
+\alias{CoxBoost}
+\title{Fit a Cox survival model by likelihood based boosting}
+\description{
+\code{CoxBoost} is used to fit a Cox proportional hazards model by componentwise likelihood based boosting.  
+It is especially suited for models with a large number of predictors and allows for mandatory covariates with unpenalized parameter estimates.
+}
+\usage{
+CoxBoost(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
+         penalty=100,trace=FALSE) 
+}
+\arguments{
+\item{time}{vector of length \code{n} specifying the observed times.}
+\item{status}{censoring indicator, i.e., vector of length \code{n} with entries \code{0} for censored observations and \code{1} for uncensored observations.}
+\item{x}{\code{n * p} matrix of covariates.}
+\item{unpen.index}{vector of length \code{p.unpen} with indices of mandatory covariates, where parameter estimation should be performed unpenalized.}
+\item{standardize}{logical value indicating whether covariates should be standardized for estimation. This does not apply for mandatory covariates, i.e., these are not standardized.}
+\item{penalty}{penalty value for the update of an individual element of the parameter vector in each boosting step.}
+\item{stepno}{number of boosting steps (\code{m}).}
+\item{trace}{logical value indicating whether progress in estimation should be indicated by printing the name of the covariate updated.}
+}
+\details{
+In contrast to gradient boosting (implemented e.g. in the \code{glmboost} routine in the R package \code{mboost}, using the \code{CoxPH} loss function), \code{CoxBoost} is not based on gradients of loss functions, but adapts the offset-based boosting approach from Tutz and Binder (2007) for estimating Cox proportional hazards models. In each boosting step the previous boosting steps are incorporated as an offset in penalized partial likelihood estimation, which is employed for obtain an update for one single parameter, i.e., one covariate, in every boosting step. This results in sparse fits similar to Lasso-like approaches, with many estimated coefficients being zero. The main model complexity parameter, which has to be selected (e.g. by cross-validation using \code{\link{cv.CoxBoost}}), is the number of boosting steps \code{stepno}. The penalty parameter \code{penalty} can be chosen rather coarsely, either by hand or using \code{\link{optimCoxBoostPenalty}}.
+
+The advantage of the offset-based approach compared to gradient boosting is that the penalty structure is very flexible. In the present implementation this is used for allowing for unpenalized mandatory covariates, which receive a very fast coefficient build-up in the course of the boosting steps, while the other (optional) covariates are subjected to penalization.
+For example in a microarray setting, the (many) microarray features would be taken to be optional covariates, and the (few) potential clinical covariates would be taken to be mandatory, by including their indices in \code{unpen.index}.  
+}
+\value{
+\code{CoxBoost} returns an object of class \code{CoxBoost}.  
+
+\item{n, p}{number of observations and number of covariates.}
+\item{stepno}{number of boosting steps.}
+\item{xnames}{vector of length \code{p} containing the names of the covariates. This information is extracted from \code{x} or names following the scheme \code{V1, V2, ...}} are used.
+\item{coefficients}{\code{stepno * p} matrix containing the coefficient estimates for the (standardized) optional covariates for every boosting step.}
+\item{meanx, sdx}{vector of mean values and standard deviations used for standardizing the covariates.}
+\item{unpen.index}{indices of the mandatory covariates in the original covariate matrix \code{x}.}
+\item{time}{observed times given in the \code{CoxBoost} call.}
+\item{status}{censoring indicator given in the \code{CoxBoost} call.}
+\item{event.times}{vector with event times from the data given in the \code{CoxBoost} call.}
+\item{linear.predictors}{\code{stepno * n} matrix giving the linear predictor for every boosting step and every observation.}
+\item{Lambda}{matrix with the Breslow estimate for the cumulative baseline hazard in every boosting step for every event time.}
+\item{logplik}{partial log-likelihood of the fitted model in the final boosting step.}
+}
+\author{
+Written by Harald Binder \email{binderh@fdm.uni-freiburg.de}. 
+}
+\references{
+Binder, H. and Schumacher, M. (2008). Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models. BMC Bioinformatics. 9:14.
+Tutz, G. and Binder, H. (2007) Boosting ridge regression. Computational Statistics \& Data Analysis, 51(12):6044-6059.
+}
+\seealso{
+\code{\link{predict.CoxBoost}}, \code{\link{cv.CoxBoost}}.
+}
+\examples{
+#   Generate some survival data with 10 informative covariates 
+n <- 200; p <- 100
+beta <- c(rep(1,10),rep(0,p-10))
+x <- matrix(rnorm(n*p),n,p)
+real.time <- -(log(runif(n)))/(10*exp(drop(x \%*\% beta)))
+cens.time <- rexp(n,rate=1/10)
+status <- ifelse(real.time <= cens.time,1,0)
+obs.time <- ifelse(real.time <= cens.time,real.time,cens.time)
+
+#   Fit a Cox proportional hazards model by CoxBoost
+
+cbfit <- CoxBoost(time=obs.time,status=status,x=x,stepno=100,penalty=100) 
+summary(cbfit)
+
+#   ... with covariates 1 and 2 being mandatory
+
+cbfit.mand <- CoxBoost(time=obs.time,status=status,x=x,unpen.index=c(1,2),
+                       stepno=100,penalty=100) 
+summary(cbfit.mand)
+
+
+}
+\keyword{models} \keyword{regression} \keyword{survial}
