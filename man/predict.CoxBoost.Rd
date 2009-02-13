@@ -6,20 +6,20 @@ Obtains predictions at specified boosting steps from a CoxBoost object fitted by
 }
 \usage{
 \method{predict}{CoxBoost}(object,newdata=NULL,newtime=NULL,newstatus=NULL,
-        at.step=NULL,times=NULL,type=c("lp","logplik","risk"),\ldots)
+        at.step=NULL,times=NULL,type=c("lp","logplik","risk","CIF"),\ldots)
 }
 \arguments{
 \item{object}{fitted CoxBoost object from a \code{\link{CoxBoost}} call.}
 \item{newdata}{\code{n.new * p} matrix with new covariate values. If just prediction for the training data is wanted, it can be omitted.}
-\item{newtime, newstatus}{vectors with observed time and censoring indicator (0 for censoring, 1 for no censoring) for new observations, where prediction is wanted. Only required if predicted partial log-likelihood is wanted, i.e., if \code{type="logplik"}. This can also be omitted when prediction is only wanted for the training data, i.e., \code{newdata=NULL}.}
+\item{newtime, newstatus}{vectors with observed time and censoring indicator (0 for censoring, 1 for no censoring, and any other values for competing events in a competing risks setting) for new observations, where prediction is wanted. Only required if predicted partial log-likelihood is wanted, i.e., if \code{type="logplik"}. This can also be omitted when prediction is only wanted for the training data, i.e., \code{newdata=NULL}.}
 \item{at.step}{scalar or vector of boosting step(s) at which prediction is wanted. If \code{type="risk"} is used, only one step is admissible. If no step is given, the final boosting step is used.}
 \item{times}{vector with \code{T} time points where prediction is wanted. Only needed for \code{type="risk"}}
-\item{type}{type of prediction to be returned: \code{"lp"} gives the linear predictor, \code{"logplik"} the partial log-likelihood, and \code{"risk"} the predicted probability of still being event-free at the time points given in \code{times}.}
+\item{type}{type of prediction to be returned: \code{"lp"} gives the linear predictor, \code{"logplik"} the partial log-likelihood, \code{"risk"} the predicted probability of not yet having had the event at the time points given in \code{times}, and \code{"CIF"} the predicted cumulative incidence function, i.e., the predicted probability of having had the event of interest.}
 \item{\dots}{miscellaneous arguments, none of which is used at the moment.}
 }
 \value{
 For \code{type="lp"} and \code{type="logplik"} a vector of length \code{n.new} (\code{at.step} being a scalar) or a \code{n.new * length(at.step)} matrix (\code{at.step} being a vector) with predictions is returned.  
-For \code{type="risk"} a \code{n.new * T} matrix with predicted probabilities at the specific time points is returned.  
+For \code{type="risk"} or \code{type="CIF"} a \code{n.new * T} matrix with predicted probabilities at the specific time points is returned.  
 }
 \author{
 Harald Binder \email{binderh@fdm.uni-freiburg.de}
@@ -49,7 +49,7 @@ cbfit <- CoxBoost(time=obs.time[train.index],status=status[train.index],
 step.logplik <- predict(cbfit,newdata=x[test.index,],
                         newtime=obs.time[test.index],
                         newstatus=status[test.index],
-                        at.step=1:300,type="logplik")
+                        at.step=0:300,type="logplik")
 
 plot(step.logplik)
 

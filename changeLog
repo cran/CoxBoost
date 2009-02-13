@@ -1,0 +1,26 @@
+1.1
+
+-   implemented penalty modification factors and penalty change distribution
+    via a connection matrix
+-   implemented estimation of models for competing risks
+
+1.0-1
+
+-   implemented data adaptive rule for default penalty value
+-   fixed bug where output of the selected covariate would print the
+    wrong name in presence of unpenalized covariates
+-   Boosting now starts a step 0, i.e., also the model before updating
+    any of the coefficients of the penalized covariates is considered.
+    However, the unpenalized covariates will already have non-zero
+    values in boosting step 0.
+    This change breaks code that relies on the size of elements
+    "coefficients", "linear.predictors", or "Lambda" of CoxBoost objects
+-   implements parallel evaluation of cross-validation folds,
+    via package 'snowfall'
+-   speed improvements by replacing 'apply' and 'rbind' , most noticeably 
+    for a large number of observations with a small number of covariates
+
+
+1.0
+
+* initial public release

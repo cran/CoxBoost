@@ -1,21 +1,27 @@
 \name{CoxBoost}
 \alias{CoxBoost}
-\title{Fit a Cox survival model by likelihood based boosting}
+\title{Fit a Cox model by likelihood based boosting}
 \description{
 \code{CoxBoost} is used to fit a Cox proportional hazards model by componentwise likelihood based boosting.  
 It is especially suited for models with a large number of predictors and allows for mandatory covariates with unpenalized parameter estimates.
 }
 \usage{
 CoxBoost(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
-         penalty=100,trace=FALSE) 
+         penalty=9*sum(status==1),stepsize.factor=1,
+         sf.scheme=c("sigmoid","linear"),pendistmat=NULL,
+         connected.index=NULL,trace=FALSE) 
 }
 \arguments{
 \item{time}{vector of length \code{n} specifying the observed times.}
-\item{status}{censoring indicator, i.e., vector of length \code{n} with entries \code{0} for censored observations and \code{1} for uncensored observations.}
+\item{status}{censoring indicator, i.e., vector of length \code{n} with entries \code{0} for censored observations and \code{1} for uncensored observations. If this vector contains elements not equal to \code{0} or \code{1}, these are taken to indicate events from a competing risk and a model for the subdistribution hazard with respect to event \code{1} is fitted (see e.g. Fine and Gray, 1999; Binder et al. 2009a).}
 \item{x}{\code{n * p} matrix of covariates.}
 \item{unpen.index}{vector of length \code{p.unpen} with indices of mandatory covariates, where parameter estimation should be performed unpenalized.}
 \item{standardize}{logical value indicating whether covariates should be standardized for estimation. This does not apply for mandatory covariates, i.e., these are not standardized.}
 \item{penalty}{penalty value for the update of an individual element of the parameter vector in each boosting step.}
+\item{stepsize.factor}{determines the step-size modification factor by which the natural step size of boosting steps should be changed after a covariate has been selected in a boosting step. The default (value \code{1}) implies constant penalties, for a value < 1 the penalty for a covariate is increased after it has been selected in a boosting step, and for a value > 1 the penalty it is decreased. If \code{pendistmat} is given, penalty updates are only performed for covariates that have at least one connection to another covariate.}
+\item{sf.scheme}{scheme for changing step sizes (via \code{stepsize.factor}). \code{"linear"} corresponds to the scheme described in Binder and Schumacher (2009b), \code{"sigmoid"} employs a sigmoid shape.}
+\item{pendistmat}{connection matrix with entries ranging between 0 and 1, with entry \code{(i,j)} indicating the certainty of the connection between covariates \code{i} and \code{j}. According to this information penalty changes due to \code{stepsize.factor} < 1 are propagated, i.e., if entry \code{(i,j)} is non-zero, the penalty for covariate \code{j} is decreased after it has been increased for covariate \code{i}, after it has been selected in a boosting step. This matrix either has to have dimension \code{(p - p.unpen) * (p - p.unpen)} or the indicices of the \code{p.connected} connected covariates have to be given in \code{connected.index}, in which case the matrix has to have dimension \code{p.connected * p.connected}.}
+\item{connected.index}{indices of the \code{p.connected} connected covariates, for which \code{pendistmat} provides the connection information for distributing changes in penalties. No overlap with \code{unpen.index} is allowed. If \code{NULL}, and a connection matrix is given, all covariates are assumed to be connected.}
 \item{stepno}{number of boosting steps (\code{m}).}
 \item{trace}{logical value indicating whether progress in estimation should be indicated by printing the name of the covariate updated.}
 }
@@ -24,6 +30,8 @@ In contrast to gradient boosting (implemented e.g. in the \code{glmboost} routin
 
 The advantage of the offset-based approach compared to gradient boosting is that the penalty structure is very flexible. In the present implementation this is used for allowing for unpenalized mandatory covariates, which receive a very fast coefficient build-up in the course of the boosting steps, while the other (optional) covariates are subjected to penalization.
 For example in a microarray setting, the (many) microarray features would be taken to be optional covariates, and the (few) potential clinical covariates would be taken to be mandatory, by including their indices in \code{unpen.index}.  
+
+If a group of correlated covariates has influence on the response, e.g. genes from the same pathway, componentwise boosting will often result in a non-zero estimate for only one member of this group. To avoid this, information on the connection between covariates can be provided in \code{pendistmat}. If then, in addition, a penalty updating scheme with \code{stepsize.factor} < 1 is chosen, connected covariates are more likely to be chosen in future boosting steps, if a directly connected covariate has been chosen in an earlier boosting step (see Binder and Schumacher, 2009b).
 }
 \value{
 \code{CoxBoost} returns an object of class \code{CoxBoost}.  
@@ -31,22 +39,30 @@ For example in a microarray setting, the (many) microarray features would be tak
 \item{n, p}{number of observations and number of covariates.}
 \item{stepno}{number of boosting steps.}
 \item{xnames}{vector of length \code{p} containing the names of the covariates. This information is extracted from \code{x} or names following the scheme \code{V1, V2, ...}} are used.
-\item{coefficients}{\code{stepno * p} matrix containing the coefficient estimates for the (standardized) optional covariates for every boosting step.}
+\item{coefficients}{\code{(stepno+1) * p} matrix containing the coefficient estimates for the (standardized) optional covariates for boosting steps \code{0} to \code{stepno}.}
 \item{meanx, sdx}{vector of mean values and standard deviations used for standardizing the covariates.}
 \item{unpen.index}{indices of the mandatory covariates in the original covariate matrix \code{x}.}
+\item{penalty}{\code{stepno * (p - p.unpen)} matrix containing the penalties used for every boosting step and every penalized covariate.}
 \item{time}{observed times given in the \code{CoxBoost} call.}
 \item{status}{censoring indicator given in the \code{CoxBoost} call.}
 \item{event.times}{vector with event times from the data given in the \code{CoxBoost} call.}
-\item{linear.predictors}{\code{stepno * n} matrix giving the linear predictor for every boosting step and every observation.}
-\item{Lambda}{matrix with the Breslow estimate for the cumulative baseline hazard in every boosting step for every event time.}
+\item{linear.predictors}{\code{(stepno+1) * n} matrix giving the linear predictor for boosting steps \code{0} to \code{stepno} and every observation.}
+\item{Lambda}{matrix with the Breslow estimate for the cumulative baseline hazard for boosting steps \code{0} to \code{stepno} for every event time.}
 \item{logplik}{partial log-likelihood of the fitted model in the final boosting step.}
 }
 \author{
 Written by Harald Binder \email{binderh@fdm.uni-freiburg.de}. 
 }
 \references{
+Binder, H., Allignol, A., Schumacher, M., and Beyersmann, J. (2009a). Boosting for high-dimensional time-to-event data with competing risks. Bioinformatics, accepted.
+
+Binder, H. and Schumacher, M. (2009b). Incorporating pathway information into boosting estimation of high-dimensional risk prediction models. BMC Bioinformatics. 10:18.
+
 Binder, H. and Schumacher, M. (2008). Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models. BMC Bioinformatics. 9:14.
+
 Tutz, G. and Binder, H. (2007) Boosting ridge regression. Computational Statistics \& Data Analysis, 51(12):6044-6059.
+
+Fine, J. P. and Gray, R. J. (1999). A proportional hazards model for the subdistribution of a competing risk. Journal of the American Statistical Association. 94:496-509.
 }
 \seealso{
 \code{\link{predict.CoxBoost}}, \code{\link{cv.CoxBoost}}.

@@ -30,9 +30,9 @@ void find_best(double *x, int *n, int *p, int *uncens, int *uncens_n, double *be
             I += V;
         }
         
-        beta_delta = U/(I + *penalty);
+        beta_delta = U/(I + penalty[actual_x]);
         
-        score = U*U/(I + *penalty);
+        score = U*U/(I + penalty[actual_x]);
 
         if (actual_x == 0 || score > max_score) {
             max_score_index = actual_x + 1;

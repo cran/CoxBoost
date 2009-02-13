@@ -6,17 +6,19 @@ This routine helps in finding a penalty value that leads to an ``optimal'' numbe
 }
 \usage{
 optimCoxBoostPenalty(time,status,x,minstepno=50,maxstepno=200,
-                     start.penalty=500,iter.max=10,upper.margin=0.05,
+                     start.penalty=9*sum(status==1),iter.max=10,
+                     upper.margin=0.05,parallel=FALSE,
                      trace=FALSE,...)
 }
 \arguments{
 \item{time}{vector of length \code{n} specifying the observed times.}
-\item{status}{censoring indicator, i.e., vector of length \code{n} with entries \code{0} for censored observations and \code{1} for uncensored observations.}
+\item{status}{censoring indicator, i.e., vector of length \code{n} with entries \code{0} for censored observations and \code{1} for uncensored observations. If this vector contains elements not equal to \code{0} or \code{1}, these are taken to indicate events from a competing risk and a model for the subdistribution hazard with respect to event \code{1} is fitted (see e.g. Fine and Gray, 1999).}
 \item{x}{\code{n * p} matrix of covariates.}
 \item{minstepno, maxstepno}{range of boosting steps in which the ``optimal'' number of boosting steps is wanted to be.}
 \item{start.penalty}{start value for the search for the appropriate penalty.}
 \item{iter.max}{maximum number of search iterations.}
 \item{upper.margin}{specifies the fraction of \code{maxstepno} which is used as an upper margin in which a cross-validation minimum is not taken to be one. This is necessary because of random fluctuations of cross-validated partial log-likelihood.}
+\item{parallel}{logical value indicating whether computations in the cross-validation folds should be performed in parallel on a compute cluster. Parallelization is performed via the package \code{snowfall} and the initialization function of of this package, \code{sfInit}, should be called before calling \code{cv.CoxBoost}.}
 \item{trace}{logical value indicating whether information on progress should be printed.}
 \item{\dots}{miscellaneous parameters for \code{\link{cv.CoxBoost}}.}
 }
