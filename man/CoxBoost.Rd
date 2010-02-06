@@ -40,6 +40,7 @@ If a group of correlated covariates has influence on the response, e.g. genes fr
 \item{stepno}{number of boosting steps.}
 \item{xnames}{vector of length \code{p} containing the names of the covariates. This information is extracted from \code{x} or names following the scheme \code{V1, V2, ...}} are used.
 \item{coefficients}{\code{(stepno+1) * p} matrix containing the coefficient estimates for the (standardized) optional covariates for boosting steps \code{0} to \code{stepno}.}
+\item{scoremat}{\code{stepno * p} matrix containing the value of the score statistic for each of the optional covariates before each boosting step.}
 \item{meanx, sdx}{vector of mean values and standard deviations used for standardizing the covariates.}
 \item{unpen.index}{indices of the mandatory covariates in the original covariate matrix \code{x}.}
 \item{penalty}{\code{stepno * (p - p.unpen)} matrix containing the penalties used for every boosting step and every penalized covariate.}
@@ -54,9 +55,9 @@ If a group of correlated covariates has influence on the response, e.g. genes fr
 Written by Harald Binder \email{binderh@fdm.uni-freiburg.de}. 
 }
 \references{
-Binder, H., Allignol, A., Schumacher, M., and Beyersmann, J. (2009a). Boosting for high-dimensional time-to-event data with competing risks. Bioinformatics, accepted.
+Binder, H., Allignol, A., Schumacher, M., and Beyersmann, J. (2009). Boosting for high-dimensional time-to-event data with competing risks. Bioinformatics, 25:890-896.
 
-Binder, H. and Schumacher, M. (2009b). Incorporating pathway information into boosting estimation of high-dimensional risk prediction models. BMC Bioinformatics. 10:18.
+Binder, H. and Schumacher, M. (2009). Incorporating pathway information into boosting estimation of high-dimensional risk prediction models. BMC Bioinformatics. 10:18.
 
 Binder, H. and Schumacher, M. (2008). Allowing for mandatory covariates in boosting estimation of sparse high-dimensional survival models. BMC Bioinformatics. 9:14.
 

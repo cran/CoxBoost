@@ -37,7 +37,7 @@ List with the following components:
 Written by Harald Binder \email{binderh@fdm.uni-freiburg.de}. 
 }
 \references{
-Binder, H. and Schumacher, M. (2008b). Incorporating pathway information into boosting estimation of high-dimensional risk prediction models. Manuscript.
+Binder, H. and Schumacher, M. (2009). Incorporating pathway information into boosting estimation of high-dimensional risk prediction models. BMC Bioinformatics. 10:18.
 }
 \seealso{
 \code{\link{CoxBoost}}, \code{\link{cv.CoxBoost}}

@@ -1,10 +1,31 @@
 #include <math.h>
 //#include <stdio.h>
 
+void get_I_vec(double *x, int *n, int *p, int *uncens_n, 
+               double *weighted_risk, double *weighted_risk_sum,double *I_vec) 
+{
+    int actual_x, i, j;
+    double x_bar,V;
+    
+    for (actual_x = 0; actual_x < *p; actual_x++) {        
+        for (i = 0; i < *uncens_n; i++) {
+            x_bar = 0;
+            for (j = 0; j < *n; j++) x_bar += weighted_risk[(i * *n) + j] * x[(actual_x * *n) + j];
+            x_bar /= weighted_risk_sum[i];
+            
+            V = 0;
+            for (j = 0; j < *n; j++) V += weighted_risk[(i * *n) + j] * (x[(actual_x * *n) + j] - x_bar) * (x[(actual_x * *n) + j] - x_bar);
+            V /= weighted_risk_sum[i]; 
+            I_vec[actual_x] += V;
+        }
+    }
+}
+
+
 void find_best(double *x, int *n, int *p, int *uncens, int *uncens_n, double *beta, double *risk, double *eta, 
                double *weights, double *weighted_risk, double *weighted_risk_sum, 
                double *penalty,
-               int *min_index, double *min_deviance, double *min_beta_delta)
+               int *warncount, int *min_index, double *min_deviance, double *min_beta_delta, double *score_vec)
 {
     int actual_x, i, j;
     double x_bar,V,ldenom;
@@ -12,6 +33,8 @@ void find_best(double *x, int *n, int *p, int *uncens, int *uncens_n, double *be
     
     double score, max_score, max_score_beta_delta;
     int max_score_index;
+    
+    *warncount = 0;
     
     for (actual_x = 0; actual_x < *p; actual_x++) {
         
@@ -30,9 +53,15 @@ void find_best(double *x, int *n, int *p, int *uncens, int *uncens_n, double *be
             I += V;
         }
         
+        if (I + penalty[actual_x] < 0.0000000001) {
+            *warncount += 1;
+            continue;
+        }
+
         beta_delta = U/(I + penalty[actual_x]);
         
         score = U*U/(I + penalty[actual_x]);
+        score_vec[actual_x] = U*U / penalty[actual_x];
 
         if (actual_x == 0 || score > max_score) {
             max_score_index = actual_x + 1;

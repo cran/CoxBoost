@@ -1,3 +1,15 @@
+1.2
+
+-   added function 'estimPVal' for permutation-based p-value estimation
+-   improved the speed of the penalty updating code in PathBoost
+
+
+1.1-1
+
+-   fixed bug in print method (introduced in 1.0-1) where the number of
+    non-zero coefficients would be taken from a wrong boosting step
+
+
 1.1
 
 -   implemented penalty modification factors and penalty change distribution

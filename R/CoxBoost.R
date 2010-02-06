@@ -104,6 +104,7 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
     }
     
     object$Lambda <- matrix(NA,stepno+1,length(object$event.times))
+    object$scoremat <- matrix(NA,max(1,stepno),object$p)
 
     #   create clusters
 
@@ -130,6 +131,7 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
     weight.double.vec <- as.double(weightmat)
     uncens.C <- as.integer(uncens - 1)
     
+    warnstep <- NULL
 
     for (actual.step in 0:stepno) {
         if (actual.step > 0) object$penalty <- rbind(object$penalty,penalty)
@@ -180,7 +182,7 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
         if (clusterno > 1) {
             actual.cluster.mask <- object$cluster.assignment == ifelse(actual.step %% clusterno == 0,clusterno,actual.step %% clusterno)
             
-            res <- .C(find_best,
+            res <- .C("find_best",
                       as.double(x[,actual.cluster.mask]),
                       as.integer(nrow(x)),
                       as.integer(sum(actual.cluster.mask)),
@@ -193,13 +195,17 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
                       as.double(weightmat.times.risk),
                       as.double(weightmat.times.risk.sum),
                       as.double(penalty[actual.cluster.mask]),
+                      warncount=integer(1),
                       min.index=integer(1),
                       min.deviance=double(1),
                       min.beta.delta=double(1),
+                      score.vec=double(ncol(x)),
                       DUP=FALSE
                       )
 
             #cat("C result:",res$min.index,"(",res$min.deviance,")\n")
+
+            if (is.null(warnstep) && res$warncount > 0) warnstep <- actual.step
 
             min.index <- (1:length(actual.cluster.mask))[actual.cluster.mask][res$min.index]
             min.deviance <- res$min.deviance
@@ -207,7 +213,7 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
         } else {
             #   C implementation
 
-            res <- .C(find_best,
+            res <- .C("find_best",
                       x.double.vec,
                       as.integer(nrow(x)),
                       as.integer(ncol(x)),
@@ -220,13 +226,17 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
                       as.double(weightmat.times.risk),
                       as.double(weightmat.times.risk.sum),
                       as.double(penalty),
+                      warncount=integer(1),
                       min.index=integer(1),
                       min.deviance=double(1),
                       min.beta.delta=double(1),
+                      score.vec=double(ncol(x)),
                       DUP=FALSE
                       )
 
             #cat("C result:",res$min.index,"(",res$min.deviance,")\n")
+
+            if (is.null(warnstep) && res$warncount > 0) warnstep <- actual.step
 
             min.index <- res$min.index
             min.deviance <- res$min.deviance
@@ -257,6 +267,7 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
             # }            
         }
 
+        object$scoremat[actual.step,] <- res$score.vec
 
         #cat("selected:",min.index,"(",min.deviance,")\n")
         if (trace) cat(object$xnames[pen.index][min.index]," ",sep="")
@@ -293,43 +304,77 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
         actual.stepsize.factor <- ifelse(length(stepsize.factor) >= min.index,stepsize.factor[min.index],stepsize.factor[1])
         if (actual.stepsize.factor != 1 && ml.fraction[min.index] < 1) { 
             if (is.null(pendistmat) || (min.index %in% connected.index && any(pendistmat[penpos[min.index],] != 0))) {
+                I.index <- min.index
+
                 actual.x.bar <- apply(weightmat*actual.risk.score*x[,min.index],2,sum)/apply(weightmat*actual.risk.score,2,sum)
                 I <- sum(apply((weightmat*actual.risk.score)*t(t(matrix(rep(x[,min.index],n.uncens),nrow(weightmat),ncol(weightmat))) - actual.x.bar)^2,2,sum)/apply(weightmat*actual.risk.score,2,sum))
+
+                if (!is.null(pendistmat)) {
+                    connected <- connected.index[which(pendistmat[penpos[min.index],] != 0)]
+                    if (length(connected) > 0) {
+                        change.index <- connected[ml.fraction[connected] < 1]
+                        I.index <- c(I.index,change.index)
+                    }
+                }
+
+                I.vec <- .C("get_I_vec",
+                          as.double(x[,I.index]),
+                          as.integer(nrow(x)),
+                          as.integer(length(I.index)),
+                          as.integer(length(uncens)),
+                          as.double(weightmat.times.risk),
+                          as.double(weightmat.times.risk.sum),
+                          I.vec=double(length(I.index)),
+                          DUP=FALSE
+                          )$I.vec
+
                 old.penalty <- penalty[min.index]
                 if (sf.scheme == "sigmoid") {
-                    new.nu <- max(1 - (1-(I/(I+penalty[min.index])))^actual.stepsize.factor,0.00001)  # prevent penalty -> Inf
+                    new.nu <- max(1 - (1-(I.vec[1]/(I.vec[1]+penalty[min.index])))^actual.stepsize.factor,0.00001)  # prevent penalty -> Inf
                     penalty[min.index] <- (1/new.nu - 1)*I
                 } else {
-                    penalty[min.index] <- (1/actual.stepsize.factor - 1)*I + penalty[min.index]/actual.stepsize.factor
+                    penalty[min.index] <- (1/actual.stepsize.factor - 1)*I.vec[1] + penalty[min.index]/actual.stepsize.factor
                 }
                 if (penalty[min.index] < 0) penalty[min.index] <- 0
                 
-                if (!is.null(pendistmat)) {
+                if (length(I.vec) > 1) {
                     if (trace) {
                         cat("\npenalty update for ",object$xnames[pen.index][min.index]," (mlf: ",round(ml.fraction[min.index],3),"): ",old.penalty," -> ",penalty[min.index],"\n",sep="")
-                        cat("connected:\n")
                     }
 
-                    connected <- connected.index[which(pendistmat[penpos[min.index],] != 0)]
-                    
-                    for (actual.target in connected) {
-                        if (ml.fraction[actual.target] < 1) {
-                            if (trace) cat(object$xnames[pen.index][actual.target]," (mlf: ",round(ml.fraction[actual.target],3),"): ",penalty[actual.target]," -> ",sep="")
-                            actual.x.bar <- apply(weightmat*actual.risk.score*x[,actual.target],2,sum)/apply(weightmat*actual.risk.score,2,sum)
-                            I.target <- sum(apply((weightmat*actual.risk.score)*t(t(matrix(rep(x[,actual.target],n.uncens),nrow(weightmat),ncol(weightmat))) - actual.x.bar)^2,2,sum)/apply(weightmat*actual.risk.score,2,sum))                            
-                            new.target.penalty <- pendistmat[penpos[min.index],penpos[actual.target]]*(1 - ml.fraction[actual.target])*I.target/
-                                                      ((1-actual.stepsize.factor)*pendistmat[penpos[min.index],penpos[actual.target]]*(1-ml.fraction[min.index])*I/(I+old.penalty) +
-                                                       (1-ml.fraction[actual.target])*I.target/(I.target+penalty[actual.target])) - 
-                                                      I.target
-                            if (new.target.penalty > 0) penalty[actual.target] <- new.target.penalty
-                            if (trace) cat(penalty[actual.target],"\n")
-                        }
-                    }
+                    change.I <- I.vec[2:length(I.vec)]
+                    if (trace) cat("adjusting penalty for covariates",paste(object$xnames[pen.index][change.index],collapse=", ",sep=""),"\n")
+
+                    new.target.penalty <- pendistmat[penpos[min.index],penpos[change.index]]*
+                                          (1 - ml.fraction[change.index])*change.I/
+                                          ((1-actual.stepsize.factor)*pendistmat[penpos[min.index],penpos[change.index]]*
+                                                                      (1-ml.fraction[min.index])*I.vec[1]/(I.vec[1]+old.penalty) +
+                                           (1-ml.fraction[change.index])*change.I/(change.I+penalty[change.index])) -
+                                          change.I
+                                          
+                    penalty[change.index] <- ifelse(new.target.penalty > 0,new.target.penalty,penalty[change.index])
+
+                    #   loop version
+                    # for (actual.target in connected) {
+                    #     if (ml.fraction[actual.target] < 1) {
+                    #         if (trace) cat(object$xnames[pen.index][actual.target]," (mlf: ",round(ml.fraction[actual.target],3),"): ",penalty[actual.target]," -> ",sep="")
+                    #         actual.x.bar <- apply(weightmat*actual.risk.score*x[,actual.target],2,sum)/apply(weightmat*actual.risk.score,2,sum)
+                    #         I.target <- sum(apply((weightmat*actual.risk.score)*t(t(matrix(rep(x[,actual.target],n.uncens),nrow(weightmat),ncol(weightmat))) - actual.x.bar)^2,2,sum)/apply(weightmat*actual.risk.score,2,sum))                            
+                    #         new.target.penalty <- pendistmat[penpos[min.index],penpos[actual.target]]*(1 - ml.fraction[actual.target])*I.target/
+                    #                                   ((1-actual.stepsize.factor)*pendistmat[penpos[min.index],penpos[actual.target]]*(1-ml.fraction[min.index])*I/(I+old.penalty) +
+                    #                                    (1-ml.fraction[actual.target])*I.target/(I.target+penalty[actual.target])) - 
+                    #                                   I.target
+                    #         if (new.target.penalty > 0) penalty[actual.target] <- new.target.penalty
+                    #         if (trace) cat(penalty[actual.target],"\n")
+                    #     }
+                    # }                    
                 }
             }
         }
     }
     if (trace) cat("\n")
+
+    if (!is.null(warnstep)) warning(paste("potentially attempted to move towards a nonexisting maximum likelihood solution around step",warnstep))
     
     #   combine penalized and unpenalized covariates
     if (!is.null(object$unpen.index)) {
@@ -348,7 +393,7 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
 
 print.CoxBoost <- function(x,...) {
     cat(x$stepno,"boosting steps resulting in",
-        sum(x$coefficients[x$stepno,] != 0),
+        sum(x$coefficients[x$stepno+1,] != 0),
         "non-zero coefficients",ifelse(is.null(x$unpen.index),"",paste("(with",length(x$unpen.index),"being mandatory)")),
         "\n")
     cat("partial log-likelihood:",x$logplik,"\n")
