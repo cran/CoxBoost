@@ -30,20 +30,38 @@ efron.weightmat <- function(time,status) {
     weightmat
 }
 
-CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,penalty=9*sum(status==1),
+CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:length(time),
+                     stepno=100,penalty=9*sum(status[subset]==1),
                      stepsize.factor=1,sf.scheme=c("sigmoid","linear"),pendistmat=NULL,connected.index=NULL,
-                     trace=FALSE)
+                     x.is.01=FALSE,return.score=TRUE,trace=FALSE)
 {
     sf.scheme <- match.arg(sf.scheme)
     
     object <- list()
+
+    #   reduce response to subset
+    time <- time[subset]
+    status <- status[subset]
+    
+    #   reorder observations according to time to speed up computations
+    object$time <- time
+    object$status <- status    
+    time.order <- order(time,decreasing=TRUE)
+    subset.time.order <- (1:nrow(x))[subset][time.order]
+    status <- status[time.order]
+    time <- time[time.order]
+    
     object$stepno <- stepno
     object$unpen.index <- unpen.index
     pen.index <- 1:ncol(x)
     if (!is.null(unpen.index)) pen.index <- pen.index[-unpen.index]
     if (length(penalty) < length(pen.index)) penalty <- rep(penalty[1],length(pen.index))
-    object$penalty <- NULL
-    clusterno <- 1
+    
+    if (any(stepsize.factor != 1)) {
+        object$penalty <- matrix(NA,stepno,length(penalty))     
+    } else {
+        object$penalty <- penalty
+    }
 
     if (is.null(colnames(x))) {
         object$xnames <- paste("V",1:ncol(x),sep="")
@@ -69,24 +87,21 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
 
     if (!is.null(unpen.index)) {
         if (!is.null(connected.index)) connected.index <- match(connected.index,(1:ncol(x))[-unpen.index])
-        unpen.x <- x[,unpen.index,drop=FALSE]
-        x <- x[,-unpen.index,drop=FALSE]
+        unpen.x <- x[subset.time.order,unpen.index,drop=FALSE]
     }
 
     uncens <- which(status == 1)
-    n <- nrow(x)
+    n <- length(status)
     n.uncens <- length(uncens)
-    p <- ncol(x)
+    p <- length(pen.index)
 
     penpos <- match(1:p,connected.index)
 
     object$n <- n
     object$p <- p
-    object$time <- time
-    object$status <- status
     object$event.times <- sort(unique(time[uncens]))
 
-    object$coefficients <- matrix(NA,stepno+1,p)
+    object$coefficients <- Matrix(0,stepno+1,p)
     if (!is.null(unpen.index)) {
         unpen.coefficients <- matrix(NA,stepno+1,ncol(unpen.x)) 
     } else {
@@ -96,24 +111,22 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
 
     object$meanx <- rep(0,length(object$xnames))
     object$sdx <- rep(1,length(object$xnames))
-
     if (standardize) {
-        x <- scale(x)
-        object$meanx[pen.index] <- attr(x,"scaled:center")
-        object$sdx[pen.index] <- attr(x,"scaled:scale")
+        pen.sdx <- apply(x[subset,pen.index],2,sd)
+        pen.sdx <- ifelse(pen.sdx == 0,1,pen.sdx)
+        pen.meanx <- apply(x[subset,pen.index],2,mean)        
+        x[subset,pen.index] <- scale(x[subset,pen.index],center=pen.meanx,scale=pen.sdx)
+
+        object$meanx[pen.index] <- pen.meanx
+        object$sdx[pen.index] <- pen.sdx        
+        object$standardize <- TRUE
+    } else {
+        object$standardize <- FALSE
     }
     
     object$Lambda <- matrix(NA,stepno+1,length(object$event.times))
-    object$scoremat <- matrix(NA,max(1,stepno),object$p)
+    if (return.score) object$scoremat <- matrix(NA,max(1,stepno),object$p)
 
-    #   create clusters
-
-    if (clusterno > 1) {
-        object$cluster.assignment <- kmeans(t(x),centers=clusterno,iter.max=50)$cluster
-    } else {
-        object$cluster.assignment <- NULL
-    }
-    
     #   Efron handling of ties
 
     weightmat <- efron.weightmat(time,status)
@@ -127,14 +140,19 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
 
     #   boosting iterations
 
-    x.double.vec <- as.double(x)
+    x.double.vec <- as.double(x[subset.time.order,pen.index])
     weight.double.vec <- as.double(weightmat)
+    max.nz.vec <- as.integer(apply(weightmat,2,function(arg) max(which(arg != 0))))
+    max.1.vec <- as.integer(c(0,rev(cummin(rev(apply(weightmat,2,function(arg) ifelse(!any(arg != 1),length(arg),min(which(arg != 1)-1))))))))
     uncens.C <- as.integer(uncens - 1)
     
     warnstep <- NULL
 
     for (actual.step in 0:stepno) {
-        if (actual.step > 0) object$penalty <- rbind(object$penalty,penalty)
+        if (actual.step > 0 && any(stepsize.factor != 1)) {
+            object$penalty[stepno,] <- penalty            
+        }         
+        
         weightmat.times.risk <- weightmat*actual.risk.score
         weightmat.times.risk.sum <- colSums(weightmat.times.risk)
 
@@ -179,50 +197,19 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
             next
         }           
                 
-        if (clusterno > 1) {
-            actual.cluster.mask <- object$cluster.assignment == ifelse(actual.step %% clusterno == 0,clusterno,actual.step %% clusterno)
-            
-            res <- .C("find_best",
-                      as.double(x[,actual.cluster.mask]),
-                      as.integer(nrow(x)),
-                      as.integer(sum(actual.cluster.mask)),
-                      uncens.C,
-                      as.integer(length(uncens)),
-                      as.double(actual.beta[actual.cluster.mask]),
-                      as.double(actual.risk.score),
-                      as.double(actual.linear.predictor),
-                      weight.double.vec,
-                      as.double(weightmat.times.risk),
-                      as.double(weightmat.times.risk.sum),
-                      as.double(penalty[actual.cluster.mask]),
-                      warncount=integer(1),
-                      min.index=integer(1),
-                      min.deviance=double(1),
-                      min.beta.delta=double(1),
-                      score.vec=double(ncol(x)),
-                      DUP=FALSE
-                      )
-
-            #cat("C result:",res$min.index,"(",res$min.deviance,")\n")
-
-            if (is.null(warnstep) && res$warncount > 0) warnstep <- actual.step
-
-            min.index <- (1:length(actual.cluster.mask))[actual.cluster.mask][res$min.index]
-            min.deviance <- res$min.deviance
-            min.beta.delta <- res$min.beta.delta            
-        } else {
-            #   C implementation
-
-            res <- .C("find_best",
+        if (x.is.01) {
+            res <- .C("find_best01",
                       x.double.vec,
-                      as.integer(nrow(x)),
-                      as.integer(ncol(x)),
+                      as.integer(n),
+                      as.integer(p),
                       uncens.C,
                       as.integer(length(uncens)),
                       as.double(actual.beta),
                       as.double(actual.risk.score),
                       as.double(actual.linear.predictor),
                       weight.double.vec,
+                      max.nz.vec,
+                      max.1.vec,
                       as.double(weightmat.times.risk),
                       as.double(weightmat.times.risk.sum),
                       as.double(penalty),
@@ -230,52 +217,49 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
                       min.index=integer(1),
                       min.deviance=double(1),
                       min.beta.delta=double(1),
-                      score.vec=double(ncol(x)),
+                      score.vec=double(p),
                       DUP=FALSE
-                      )
-
-            #cat("C result:",res$min.index,"(",res$min.deviance,")\n")
-
-            if (is.null(warnstep) && res$warncount > 0) warnstep <- actual.step
-
-            min.index <- res$min.index
-            min.deviance <- res$min.deviance
-            min.beta.delta <- res$min.beta.delta
-
-            # #   R implementation using a loop
-            # 
-            # min.index <- NULL
-            # min.deviance <- NULL
-            # min.beta <- NULL
-            # 
-            # for (i in 1:ncol(x)) {
-            #     actual.x.bar <- apply(weightmat*actual.risk.score*x[,i],2,sum)/apply(weightmat*actual.risk.score,2,sum)
-            #     U <- x[uncens,i] - actual.x.bar
-            #     V <- apply((weightmat*actual.risk.score)*t(t(matrix(rep(x[,i],n.uncens),nrow(weightmat),ncol(weightmat))) - actual.x.bar)^2,2,sum)/apply(weightmat*actual.risk.score,2,sum)
-            # 
-            #     candidate.beta.delta <- sum(U)/(sum(V)+penalty)    
-            #     candidate.beta <- actual.beta
-            #     candidate.beta[i] <- candidate.beta[i] + candidate.beta.delta
-            #     candidate.loglik <- sum(drop(x[uncens,,drop=FALSE] %*% candidate.beta) - log(apply(weightmat*exp(drop(x %*% candidate.beta)),2,sum)))
-            #     candidate.deviance <- -2*candidate.loglik
-            # 
-            #     if (i == 1 || candidate.deviance < min.deviance) {
-            #         min.index <- i
-            #         min.deviance <- candidate.deviance
-            #         min.beta <- candidate.beta
-            #     }
-            # }            
+                      )                
+        } else {
+            res <- .C("find_best",
+                      x.double.vec,
+                      as.integer(n),
+                      as.integer(p),
+                      uncens.C,
+                      as.integer(length(uncens)),
+                      as.double(actual.beta),
+                      as.double(actual.risk.score),
+                      as.double(actual.linear.predictor),
+                      weight.double.vec,
+                      max.nz.vec,
+                      max.1.vec,
+                      as.double(weightmat.times.risk),
+                      as.double(weightmat.times.risk.sum),
+                      as.double(penalty),
+                      warncount=integer(1),
+                      min.index=integer(1),
+                      min.deviance=double(1),
+                      min.beta.delta=double(1),
+                      score.vec=double(p),
+                      DUP=FALSE
+                      )                
         }
 
-        object$scoremat[actual.step,] <- res$score.vec
+        if (is.null(warnstep) && res$warncount > 0) warnstep <- actual.step
+
+        min.index <- res$min.index
+        min.deviance <- res$min.deviance
+        min.beta.delta <- res$min.beta.delta
+
+        if (return.score) object$scoremat[actual.step,] <- res$score.vec
 
         #cat("selected:",min.index,"(",min.deviance,")\n")
         if (trace) cat(object$xnames[pen.index][min.index]," ",sep="")
 
         #   update the maximum likelihood fractions needed for penalty distribution
         if (!is.null(pendistmat)) { 
-            actual.x.bar <- apply(weightmat*actual.risk.score*x[,min.index],2,sum)/apply(weightmat*actual.risk.score,2,sum)
-            I <- sum(apply((weightmat*actual.risk.score)*t(t(matrix(rep(x[,min.index],n.uncens),nrow(weightmat),ncol(weightmat))) - actual.x.bar)^2,2,sum)/apply(weightmat*actual.risk.score,2,sum))
+            actual.x.bar <- apply(weightmat*actual.risk.score*x[subset.time.order,pen.index[min.index]],2,sum)/apply(weightmat*actual.risk.score,2,sum)
+            I <- sum(apply((weightmat*actual.risk.score)*t(t(matrix(rep(x[subset.time.order,pen.index[min.index]],n.uncens),nrow(weightmat),ncol(weightmat))) - actual.x.bar)^2,2,sum)/apply(weightmat*actual.risk.score,2,sum))
             nu <- I / (I + penalty[min.index])
             
             ml.fraction[min.index] <- ml.fraction[min.index] + (1-ml.fraction[min.index])*nu
@@ -283,8 +267,7 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
 
         actual.beta[min.index] <- actual.beta[min.index] + min.beta.delta
         #print(actual.beta)
-        actual.linear.predictor <- drop(x %*% actual.beta)
-        if (!is.null(unpen.index)) actual.linear.predictor <- actual.linear.predictor + drop(unpen.x %*% actual.unpen.beta)
+        actual.linear.predictor <- actual.linear.predictor + x[subset.time.order,pen.index[min.index]]*min.beta.delta
 
         actual.risk.score <- exp(drop(actual.linear.predictor))
         weightmat.times.risk <- weightmat*actual.risk.score
@@ -306,8 +289,8 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
             if (is.null(pendistmat) || (min.index %in% connected.index && any(pendistmat[penpos[min.index],] != 0))) {
                 I.index <- min.index
 
-                actual.x.bar <- apply(weightmat*actual.risk.score*x[,min.index],2,sum)/apply(weightmat*actual.risk.score,2,sum)
-                I <- sum(apply((weightmat*actual.risk.score)*t(t(matrix(rep(x[,min.index],n.uncens),nrow(weightmat),ncol(weightmat))) - actual.x.bar)^2,2,sum)/apply(weightmat*actual.risk.score,2,sum))
+                actual.x.bar <- apply(weightmat*actual.risk.score*x[subset.time.order,pen.index[min.index]],2,sum)/apply(weightmat*actual.risk.score,2,sum)
+                I <- sum(apply((weightmat*actual.risk.score)*t(t(matrix(rep(x[subset.time.order,pen.index[min.index]],n.uncens),nrow(weightmat),ncol(weightmat))) - actual.x.bar)^2,2,sum)/apply(weightmat*actual.risk.score,2,sum))
 
                 if (!is.null(pendistmat)) {
                     connected <- connected.index[which(pendistmat[penpos[min.index],] != 0)]
@@ -318,8 +301,8 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
                 }
 
                 I.vec <- .C("get_I_vec",
-                          as.double(x[,I.index]),
-                          as.integer(nrow(x)),
+                          as.double(x[subset.time.order,pen.index[I.index]]),
+                          as.integer(n),
                           as.integer(length(I.index)),
                           as.integer(length(uncens)),
                           as.double(weightmat.times.risk),
@@ -358,8 +341,8 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
                     # for (actual.target in connected) {
                     #     if (ml.fraction[actual.target] < 1) {
                     #         if (trace) cat(object$xnames[pen.index][actual.target]," (mlf: ",round(ml.fraction[actual.target],3),"): ",penalty[actual.target]," -> ",sep="")
-                    #         actual.x.bar <- apply(weightmat*actual.risk.score*x[,actual.target],2,sum)/apply(weightmat*actual.risk.score,2,sum)
-                    #         I.target <- sum(apply((weightmat*actual.risk.score)*t(t(matrix(rep(x[,actual.target],n.uncens),nrow(weightmat),ncol(weightmat))) - actual.x.bar)^2,2,sum)/apply(weightmat*actual.risk.score,2,sum))                            
+                    #         actual.x.bar <- apply(weightmat*actual.risk.score*x[subset.time.order,pen.index[actual.target]],2,sum)/apply(weightmat*actual.risk.score,2,sum)
+                    #         I.target <- sum(apply((weightmat*actual.risk.score)*t(t(matrix(rep(x[subset.time.order,pen.index[actual.target]],n.uncens),nrow(weightmat),ncol(weightmat))) - actual.x.bar)^2,2,sum)/apply(weightmat*actual.risk.score,2,sum))                            
                     #         new.target.penalty <- pendistmat[penpos[min.index],penpos[actual.target]]*(1 - ml.fraction[actual.target])*I.target/
                     #                                   ((1-actual.stepsize.factor)*pendistmat[penpos[min.index],penpos[actual.target]]*(1-ml.fraction[min.index])*I/(I+old.penalty) +
                     #                                    (1-ml.fraction[actual.target])*I.target/(I.target+penalty[actual.target])) - 
@@ -379,7 +362,7 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
     #   combine penalized and unpenalized covariates
     if (!is.null(object$unpen.index)) {
         object$p <- object$p + length(object$unpen.index)
-        combined.coefficients <- matrix(NA,nrow(object$coefficients),object$p)
+        combined.coefficients <- Matrix(0,nrow(object$coefficients),object$p)
         combined.coefficients[,pen.index] <- object$coefficients
         combined.coefficients[,object$unpen.index] <- unpen.coefficients
         object$coefficients <- combined.coefficients
@@ -413,13 +396,31 @@ summary.CoxBoost <- function(object,...) {
     cat("parameter estimate < 0:\n",paste(object$xnames[object$coefficients[object$stepno+1,] < 0],collapse=", "),"\n")
 }
 
-predict.CoxBoost <- function(object,newdata=NULL,newtime=NULL,newstatus=NULL,at.step=NULL,times=NULL,type=c("lp","logplik","risk","CIF"),...) {
+predict.CoxBoost <- function(object,newdata=NULL,newtime=NULL,newstatus=NULL,subset=NULL,at.step=NULL,times=NULL,type=c("lp","logplik","risk","CIF"),...) {
     if (is.null(at.step)) at.step <- object$stepno
 
     if (is.null(newdata)) {
         linear.predictor <- object$linear.predictor[at.step+1,,drop=FALSE]
     } else {
-        linear.predictor <- t(scale(newdata,center=object$meanx,scale=object$sdx) %*% t(object$coefficients[at.step+1,,drop=FALSE]))
+        if (is.null(subset)) {
+            subset.index <- 1:nrow(newdata)
+        } else {
+            subset.index <- (1:nrow(newdata))[subset]
+            if (!is.null(newtime)) newtime <- newtime[subset]
+            if (!is.null(newstatus)) newstatus <- newstatus[subset]
+        }
+
+        nz.index <- which(Matrix::colSums(abs(object$coefficients[at.step+1,,drop=FALSE])) > 0)
+        if (length(nz.index) > 0) {
+            if (object$standardize) {
+                linear.predictor <- as.matrix(Matrix::tcrossprod(object$coefficients[at.step+1,nz.index,drop=FALSE],scale(newdata[subset.index,nz.index,drop=FALSE],center=object$meanx[nz.index],scale=object$sdx[nz.index])))
+            } else {
+                # linear.predictor <- t(newdata[subset.index,] %*% t(object$coefficients[at.step+1,,drop=FALSE]))
+                linear.predictor <- as.matrix(Matrix::tcrossprod(object$coefficients[at.step+1,nz.index,drop=FALSE],newdata[subset.index,nz.index,drop=FALSE]))
+            }
+        } else {
+            linear.predcitor <- matrix(0,length(at.step),length(subset.index))
+        }
     }
     
     type <- match.arg(type)
@@ -459,7 +460,8 @@ predict.CoxBoost <- function(object,newdata=NULL,newtime=NULL,newstatus=NULL,at.
     NULL
 }
 
-cv.CoxBoost <- function(time,status,x,maxstepno=100,K=10,type=c("verweij","naive"),parallel=FALSE,upload.x=TRUE,folds=NULL,
+cv.CoxBoost <- function(time,status,x,maxstepno=100,K=10,type=c("verweij","naive"),parallel=FALSE,upload.x=TRUE,
+                        multicore=FALSE,folds=NULL,
                         trace=FALSE,...) {
     type <- match.arg(type)
 
@@ -493,26 +495,26 @@ cv.CoxBoost <- function(time,status,x,maxstepno=100,K=10,type=c("verweij","naive
     
     eval.fold <- function(actual.fold,...) {
         if (trace) cat("cv fold ",actual.fold,": ",sep="")
-        cv.fit <- CoxBoost(time=time[-folds[[actual.fold]]],status=status[-folds[[actual.fold]]],x=x[-folds[[actual.fold]],,drop=FALSE],
-                           stepno=maxstepno,trace=trace,...)
+        cv.fit <- CoxBoost(time=time,status=status,x=x,subset=-folds[[actual.fold]],
+                           stepno=maxstepno,return.score=FALSE,trace=trace,...)
 
         if (type == "verweij") {
             full.ploglik <- predict(cv.fit,newdata=x,newtime=time,newstatus=status,type="logplik",at.step=0:maxstepno)
-            fold.ploglik <- predict(cv.fit,newdata=x[-folds[[actual.fold]],,drop=FALSE],newtime=time[-folds[[actual.fold]]],newstatus=status[-folds[[actual.fold]]],
+            fold.ploglik <- predict(cv.fit,newdata=x,newtime=time,newstatus=status,subset=-folds[[actual.fold]],
                                     type="logplik",at.step=0:maxstepno)
                                     
             return(full.ploglik - fold.ploglik)
         } else {
-            return(predict(cv.fit,newdata=x[folds[[actual.fold]],,drop=FALSE],newtime=time[folds[[actual.fold]]],
-                                                 newstatus=status[folds[[actual.fold]]],
+            return(predict(cv.fit,newdata=x,newtime=time,newstatus=status,subset=folds[[actual.fold]],
                                                  type="logplik",at.step=0:maxstepno))
         }
     }
 
+    eval.success <- FALSE
+    
     if (parallel) {
         if (!require(snowfall)) {
-            warning("package 'snowfall' not found, i.e., parallelization cannot be performed")
-            criterion <- matrix(unlist(lapply(1:length(folds),eval.fold,...)),nrow=length(folds),byrow=TRUE)        
+            warning("package 'snowfall' not found, i.e., parallelization cannot be performed using this package")
         } else {
             sfLibrary(CoxBoost)
             if (upload.x) {
@@ -521,10 +523,27 @@ cv.CoxBoost <- function(time,status,x,maxstepno=100,K=10,type=c("verweij","naive
                 sfExport("time","status","maxstepno","trace","type","folds")
             }
             criterion <- matrix(unlist(sfClusterApplyLB(1:length(folds),eval.fold,...)),nrow=length(folds),byrow=TRUE)                
+            eval.success <- TRUE
         }
-    } else {
+    } 
+
+    if (!eval.success & multicore) {
+        if (!require(multicore)) {
+            warning("package 'multicore' not found, i.e., parallelization cannot be performed using this package")
+        } else {
+            if (multicore > 1) {
+                criterion <- matrix(unlist(mclapply(1:length(folds),eval.fold,mc.preschedule=FALSE,mc.cores=multicore,...)),nrow=length(folds),byrow=TRUE)
+            } else {
+                criterion <- matrix(unlist(mclapply(1:length(folds),eval.fold,mc.preschedule=FALSE,...)),nrow=length(folds),byrow=TRUE)                
+            }
+            eval.success <- TRUE
+        }        
+    }
+
+    if (!eval.success) {
         criterion <- matrix(unlist(lapply(1:length(folds),eval.fold,...)),nrow=length(folds),byrow=TRUE)        
     }
+    
     mean.criterion <- apply(criterion,2,mean)
     
     list(mean.logplik=mean.criterion,se.logplik=apply(criterion,2,sd)/sqrt(nrow(criterion)),optimal.step=which.max(mean.criterion)-1,

@@ -6,10 +6,10 @@
 It is especially suited for models with a large number of predictors and allows for mandatory covariates with unpenalized parameter estimates.
 }
 \usage{
-CoxBoost(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
-         penalty=9*sum(status==1),stepsize.factor=1,
+CoxBoost(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:length(time),
+         stepno=100,penalty=9*sum(status[subset]==1),stepsize.factor=1,
          sf.scheme=c("sigmoid","linear"),pendistmat=NULL,
-         connected.index=NULL,trace=FALSE) 
+         connected.index=NULL,x.is.01=FALSE,return.score=TRUE,trace=FALSE) 
 }
 \arguments{
 \item{time}{vector of length \code{n} specifying the observed times.}
@@ -17,12 +17,15 @@ CoxBoost(time,status,x,unpen.index=NULL,standardize=TRUE,stepno=100,
 \item{x}{\code{n * p} matrix of covariates.}
 \item{unpen.index}{vector of length \code{p.unpen} with indices of mandatory covariates, where parameter estimation should be performed unpenalized.}
 \item{standardize}{logical value indicating whether covariates should be standardized for estimation. This does not apply for mandatory covariates, i.e., these are not standardized.}
+\item{subset}{a vector specifying a subset of observations to be used in the fitting process.}
 \item{penalty}{penalty value for the update of an individual element of the parameter vector in each boosting step.}
 \item{stepsize.factor}{determines the step-size modification factor by which the natural step size of boosting steps should be changed after a covariate has been selected in a boosting step. The default (value \code{1}) implies constant penalties, for a value < 1 the penalty for a covariate is increased after it has been selected in a boosting step, and for a value > 1 the penalty it is decreased. If \code{pendistmat} is given, penalty updates are only performed for covariates that have at least one connection to another covariate.}
 \item{sf.scheme}{scheme for changing step sizes (via \code{stepsize.factor}). \code{"linear"} corresponds to the scheme described in Binder and Schumacher (2009b), \code{"sigmoid"} employs a sigmoid shape.}
 \item{pendistmat}{connection matrix with entries ranging between 0 and 1, with entry \code{(i,j)} indicating the certainty of the connection between covariates \code{i} and \code{j}. According to this information penalty changes due to \code{stepsize.factor} < 1 are propagated, i.e., if entry \code{(i,j)} is non-zero, the penalty for covariate \code{j} is decreased after it has been increased for covariate \code{i}, after it has been selected in a boosting step. This matrix either has to have dimension \code{(p - p.unpen) * (p - p.unpen)} or the indicices of the \code{p.connected} connected covariates have to be given in \code{connected.index}, in which case the matrix has to have dimension \code{p.connected * p.connected}.}
 \item{connected.index}{indices of the \code{p.connected} connected covariates, for which \code{pendistmat} provides the connection information for distributing changes in penalties. No overlap with \code{unpen.index} is allowed. If \code{NULL}, and a connection matrix is given, all covariates are assumed to be connected.}
 \item{stepno}{number of boosting steps (\code{m}).}
+\item{x.is.01}{logical value indicating whether (the non-mandatory part of) \code{x} contains just values 0 and 1, i.e., binary covariates. If this is the case and indicated by this argument, computations are much faster.}
+\item{return.score}{logical value indicating whether the value of the score statistic, as evaluated in each boosting step for every covariate, should be returned. The corresponding element \code{scoremat} can become very large (and needs much memory) when the number of covariates and boosting steps is large.}
 \item{trace}{logical value indicating whether progress in estimation should be indicated by printing the name of the covariate updated.}
 }
 \details{
@@ -39,11 +42,11 @@ If a group of correlated covariates has influence on the response, e.g. genes fr
 \item{n, p}{number of observations and number of covariates.}
 \item{stepno}{number of boosting steps.}
 \item{xnames}{vector of length \code{p} containing the names of the covariates. This information is extracted from \code{x} or names following the scheme \code{V1, V2, ...}} are used.
-\item{coefficients}{\code{(stepno+1) * p} matrix containing the coefficient estimates for the (standardized) optional covariates for boosting steps \code{0} to \code{stepno}.}
+\item{coefficients}{\code{(stepno+1) * p} matrix containing the coefficient estimates for the (standardized) optional covariates for boosting steps \code{0} to \code{stepno}. This will typically be a sparse matrix, built using package \code{\link{Matrix}}}.
 \item{scoremat}{\code{stepno * p} matrix containing the value of the score statistic for each of the optional covariates before each boosting step.}
 \item{meanx, sdx}{vector of mean values and standard deviations used for standardizing the covariates.}
 \item{unpen.index}{indices of the mandatory covariates in the original covariate matrix \code{x}.}
-\item{penalty}{\code{stepno * (p - p.unpen)} matrix containing the penalties used for every boosting step and every penalized covariate.}
+\item{penalty}{If \code{stepsize.factor != 1}, \code{stepno * (p - p.unpen)} matrix containing the penalties used for every boosting step and every penalized covariate, otherwise a vector containing the unchanged values of the penalty employed in each boosting step.}
 \item{time}{observed times given in the \code{CoxBoost} call.}
 \item{status}{censoring indicator given in the \code{CoxBoost} call.}
 \item{event.times}{vector with event times from the data given in the \code{CoxBoost} call.}

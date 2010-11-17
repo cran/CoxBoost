@@ -4,14 +4,18 @@
 \description{
 Performs permutation-based p-value estimation for the optional covariates in a fit from \code{\link{CoxBoost}}.}
 \usage{
-estimPVal(object,x,permute.n=10,parallel=FALSE,trace=FALSE)
+estimPVal(object,x,permute.n=10,per.covariate=FALSE,parallel=FALSE,
+          multicore=FALSE,trace=FALSE,...)
 }
 \arguments{
 \item{object}{fit object obtained from \code{\link{CoxBoost}}.}
 \item{x}{\code{n * p} matrix of covariates. This has to be the same that was used in the call to \code{\link{CoxBoost}}.}
 \item{permute.n}{number of permutations employed for obtaining a null distribution.}
+\item{per.covariate}{logical value indicating whether a separate null distribution should be considered for each covariate. A larger number of permutations will be needed if this is wanted.}
 \item{parallel}{logical value indicating whether computations for obtaining a null distribution via permutation should be performed in parallel on a compute cluster. Parallelization is performed via the package \code{snowfall} and the initialization function of of this package, \code{sfInit}, should be called before calling \code{estimPVal}.}
+\item{multicore}{indicates whether computations in the permuted data sets should be performed in parallel, using package \code{multicore}. If \code{TRUE}, package \code{multicore} is employed using the default number of cores. A value larger than \code{1} is taken to be the number of cores that should be employed.}
 \item{trace}{logical value indicating whether progress in estimation should be indicated by printing the number of the permutation that is currently being evaluated.}
+\item{\dots}{miscellaneous parameters for the calls to \code{\link{CoxBoost}}}
 }
 \details{
 As p-value estimates are based on permutations, random numbers are drawn for determining permutation indices. Therfore, the results depend on the state of the random number generator. This can be used to explore the variability due to random variation and help to determine an adequate value for \code{permute.n}. A value of 100 should be sufficient, but this can be quite slow. If there is a considerable number of covariates, e.g., larger than 100, a much smaller number of permutations, e.g., 10, might already work well. The estimates might also be negatively affected, if only a small number of boosting steps (say <50) was employed for the original fit. 

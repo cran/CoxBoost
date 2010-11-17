@@ -1,3 +1,21 @@
+1.2-1
+
+-   improved speed of the core selection routine
+-   added faster code for the special case of binary covariate data
+-   added an option for not returning the matrix with the score statistics
+    for saving memory in applications with a huge number of covariates
+-   optimized memory usage for a large number of covariates
+-   covariates with standard deviation equal to zero now only are centered
+-   a matrix of the employed penalties know is only stored if the penalties,
+    changed. Otherwise the 'element' penalty is just a vector
+-   added support for 'multicore' package for cross-validation and p-value
+    estimation
+-   added an option for fitting on subsets of observations
+-   The coefficient matrix is now stored as a sparse matrix, employing
+    package 'Matrix'
+-   fixed the implementation of the p-value estimation
+
+
 1.2
 
 -   added function 'estimPVal' for permutation-based p-value estimation

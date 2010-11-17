@@ -6,12 +6,14 @@ Obtains predictions at specified boosting steps from a CoxBoost object fitted by
 }
 \usage{
 \method{predict}{CoxBoost}(object,newdata=NULL,newtime=NULL,newstatus=NULL,
-        at.step=NULL,times=NULL,type=c("lp","logplik","risk","CIF"),\ldots)
+        subset=NULL,at.step=NULL,times=NULL,
+        type=c("lp","logplik","risk","CIF"),\ldots)
 }
 \arguments{
 \item{object}{fitted CoxBoost object from a \code{\link{CoxBoost}} call.}
 \item{newdata}{\code{n.new * p} matrix with new covariate values. If just prediction for the training data is wanted, it can be omitted.}
 \item{newtime, newstatus}{vectors with observed time and censoring indicator (0 for censoring, 1 for no censoring, and any other values for competing events in a competing risks setting) for new observations, where prediction is wanted. Only required if predicted partial log-likelihood is wanted, i.e., if \code{type="logplik"}. This can also be omitted when prediction is only wanted for the training data, i.e., \code{newdata=NULL}.}
+\item{subset}{an optional vector specifying a subset of observations to be used for evaluation.}
 \item{at.step}{scalar or vector of boosting step(s) at which prediction is wanted. If \code{type="risk"} is used, only one step is admissible. If no step is given, the final boosting step is used.}
 \item{times}{vector with \code{T} time points where prediction is wanted. Only needed for \code{type="risk"}}
 \item{type}{type of prediction to be returned: \code{"lp"} gives the linear predictor, \code{"logplik"} the partial log-likelihood, \code{"risk"} the predicted probability of not yet having had the event at the time points given in \code{times}, and \code{"CIF"} the predicted cumulative incidence function, i.e., the predicted probability of having had the event of interest.}
