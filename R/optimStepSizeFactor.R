@@ -33,7 +33,11 @@ optimStepSizeFactor <- function(time,status,x,direction=c("down","up","both"),st
         if (factor.list[i] == 1 && !is.null(constant.cv.res)) {
             cv.res.act.path <- constant.cv.res
         } else {
-            cv.res.act.path <- cv.CoxBoost(time=time,status=status,x=x,stepsize.factor=factor.list[i],parallel=parallel,upload.x=FALSE,folds=folds,trace=trace,...)
+            if (is.null(folds)) {
+                cv.res.act.path <- cv.CoxBoost(time=time,status=status,x=x,stepsize.factor=factor.list[i],parallel=parallel,upload.x=FALSE,trace=trace,...)
+            } else {
+                cv.res.act.path <- cv.CoxBoost(time=time,status=status,x=x,stepsize.factor=factor.list[i],parallel=parallel,upload.x=FALSE,folds=folds,trace=trace,...)
+            }
         }
 
         critmat <- rbind(critmat,cv.res.act.path$mean.logplik)

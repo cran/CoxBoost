@@ -31,12 +31,18 @@ efron.weightmat <- function(time,status) {
 }
 
 CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:length(time),
-                     stepno=100,penalty=9*sum(status[subset]==1),
+                     weights=NULL,stepno=100,penalty=9*sum(status[subset]==1),
+                     criterion=c("pscore","score","hpscore","hscore"),
                      stepsize.factor=1,sf.scheme=c("sigmoid","linear"),pendistmat=NULL,connected.index=NULL,
                      x.is.01=FALSE,return.score=TRUE,trace=FALSE)
 {
     sf.scheme <- match.arg(sf.scheme)
-    
+    criterion <- match.arg(criterion)
+
+    if (any(is.na(x))) {
+        stop("'x' may not contain missing values")        
+    }    
+
     object <- list()
 
     #   reduce response to subset
@@ -48,9 +54,12 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
     object$status <- status    
     time.order <- order(time,decreasing=TRUE)
     subset.time.order <- (1:nrow(x))[subset][time.order]
+    reverse.time.order <- match(seq(along=time),time.order)
     status <- status[time.order]
     time <- time[time.order]
     
+    if (!is.null(weights)) weights <- weights[subset][time.order]
+
     object$stepno <- stepno
     object$unpen.index <- unpen.index
     pen.index <- 1:ncol(x)
@@ -130,6 +139,7 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
     #   Efron handling of ties
 
     weightmat <- efron.weightmat(time,status)
+    if (!is.null(weights)) weightmat <- weightmat*weights
 
     actual.beta <- rep(0,p)
     if (!is.null(unpen.index)) actual.unpen.beta <- rep(0,ncol(unpen.x))
@@ -147,6 +157,9 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
     uncens.C <- as.integer(uncens - 1)
     
     warnstep <- NULL
+
+    first.score <- NULL
+    presel.index <- c()
 
     for (actual.step in 0:stepno) {
         if (actual.step > 0 && any(stepsize.factor != 1)) {
@@ -187,11 +200,15 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
             actual.Lambda <- rep(NA,length(object$event.times))
             for (i in seq(along=object$event.times)) {
                 actual.mask <- time[uncens] <= object$event.times[i]
-                actual.Lambda[i] <- sum(1/weightmat.times.risk.sum[actual.mask])
+                if (is.null(weights)) {
+                    actual.Lambda[i] <- sum(1/weightmat.times.risk.sum[actual.mask])
+                } else {
+                    actual.Lambda[i] <- sum(weights[uncens][actual.mask]/weightmat.times.risk.sum[actual.mask])
+                }
             }
         
             object$coefficients[actual.step+1,] <- actual.beta
-            object$linear.predictor[actual.step+1,] <- actual.linear.predictor
+            object$linear.predictor[actual.step+1,] <- actual.linear.predictor[reverse.time.order]
             object$Lambda[actual.step+1,] <- actual.Lambda
             
             next
@@ -218,31 +235,94 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
                       min.deviance=double(1),
                       min.beta.delta=double(1),
                       score.vec=double(p),
-                      DUP=FALSE
+                      DUP=FALSE,NAOK=TRUE
                       )                
         } else {
-            res <- .C("find_best",
-                      x.double.vec,
-                      as.integer(n),
-                      as.integer(p),
-                      uncens.C,
-                      as.integer(length(uncens)),
-                      as.double(actual.beta),
-                      as.double(actual.risk.score),
-                      as.double(actual.linear.predictor),
-                      weight.double.vec,
-                      max.nz.vec,
-                      max.1.vec,
-                      as.double(weightmat.times.risk),
-                      as.double(weightmat.times.risk.sum),
-                      as.double(penalty),
-                      warncount=integer(1),
-                      min.index=integer(1),
-                      min.deviance=double(1),
-                      min.beta.delta=double(1),
-                      score.vec=double(p),
-                      DUP=FALSE
-                      )                
+            if ((criterion != "hscore" && criterion != "hpscore") || actual.step == 1) {
+                res <- .C("find_best",
+                        x.double.vec,
+                        as.integer(n),
+                        as.integer(p),
+                        uncens.C,
+                        as.integer(length(uncens)),
+                        as.double(actual.beta),
+                        as.double(actual.risk.score),
+                        as.double(actual.linear.predictor),
+                        weight.double.vec,
+                        max.nz.vec,
+                        max.1.vec,
+                        as.double(weightmat.times.risk),
+                        as.double(weightmat.times.risk.sum),
+                        as.double(penalty),
+                        as.integer(criterion == "pscore" || criterion == "hpscore"),
+                        warncount=integer(1),
+                        min.index=integer(1),
+                        min.deviance=double(1),
+                        min.beta.delta=double(1),
+                        score.vec=double(p),
+                        DUP=FALSE,NAOK=TRUE
+                        )                
+            } else {
+                res <- .C("find_best_candidate",
+                        x.double.vec,
+                        as.integer(n),
+                        as.integer(p),
+                        uncens.C,
+                        as.integer(length(uncens)),
+                        as.double(actual.beta),
+                        as.double(actual.risk.score),
+                        as.double(actual.linear.predictor),
+                        weight.double.vec,
+                        max.nz.vec,
+                        max.1.vec,
+                        as.double(weightmat.times.risk),
+                        as.double(weightmat.times.risk.sum),
+                        as.double(penalty),
+                        as.integer(criterion == "pscore" || criterion == "hpscore"),
+                        as.integer(presel.index - 1),
+                        as.integer(length(presel.index)),
+                        warncount=integer(1),
+                        min.index=integer(1),
+                        min.deviance=double(1),
+                        min.beta.delta=double(1),
+                        score.vec=double(p),
+                        DUP=FALSE,NAOK=TRUE
+                        )                
+
+                min.presel.score <- min(res$score.vec[presel.index])
+                if (length(presel.index) < length(first.score) && 
+                    min.presel.score < max(first.score[-presel.index])) 
+                {
+                    new.candidates <- sort(union(which(first.score > min.presel.score),presel.index))
+
+                    res <- .C("find_best_candidate",
+                            x.double.vec,
+                            as.integer(n),
+                            as.integer(p),
+                            uncens.C,
+                            as.integer(length(uncens)),
+                            as.double(actual.beta),
+                            as.double(actual.risk.score),
+                            as.double(actual.linear.predictor),
+                            weight.double.vec,
+                            max.nz.vec,
+                            max.1.vec,
+                            as.double(weightmat.times.risk),
+                            as.double(weightmat.times.risk.sum),
+                            as.double(penalty),
+                            as.integer(criterion == "pscore"),
+                            as.integer(new.candidates - 1),
+                            as.integer(length(new.candidates)),
+                            warncount=integer(1),
+                            min.index=integer(1),
+                            min.deviance=double(1),
+                            min.beta.delta=double(1),
+                            score.vec=double(p),
+                            DUP=FALSE,NAOK=TRUE
+                            )                
+                        
+                }
+            }
         }
 
         if (is.null(warnstep) && res$warncount > 0) warnstep <- actual.step
@@ -252,6 +332,11 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
         min.beta.delta <- res$min.beta.delta
 
         if (return.score) object$scoremat[actual.step,] <- res$score.vec
+        if (criterion == "hscore" || criterion == "hpscore") {
+            if (actual.step == 1) first.score <- res$score.vec
+            presel.index <- sort(union(presel.index,min.index))
+        }  
+
 
         #cat("selected:",min.index,"(",min.deviance,")\n")
         if (trace) cat(object$xnames[pen.index][min.index]," ",sep="")
@@ -276,11 +361,15 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
         actual.Lambda <- rep(NA,length(object$event.times))
         for (i in seq(along=object$event.times)) {
             actual.mask <- time[uncens] <= object$event.times[i]
-            actual.Lambda[i] <- sum(1/weightmat.times.risk.sum[actual.mask])
+            if (is.null(weights)) {
+                actual.Lambda[i] <- sum(1/weightmat.times.risk.sum[actual.mask])
+            } else {
+                actual.Lambda[i] <- sum(weights[uncens][actual.mask]/weightmat.times.risk.sum[actual.mask])
+            }
         }
         
         object$coefficients[actual.step+1,] <- actual.beta
-        object$linear.predictor[actual.step+1,] <- actual.linear.predictor
+        object$linear.predictor[actual.step+1,] <- actual.linear.predictor[reverse.time.order]
         object$Lambda[actual.step+1,] <- actual.Lambda
 
         #   update the penalty if the user has chosen any other value than the default
@@ -367,6 +456,38 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
         combined.coefficients[,object$unpen.index] <- unpen.coefficients
         object$coefficients <- combined.coefficients
     }
+
+    # if (return.score) {
+    #     # zmat <- qnorm(pchisq(ifelse(object$scoremat>70,70,object$scoremat),df=1))
+    #     # pmat <- 1 - pchisq(object$scoremat,df=1)
+    #     # exclude.crit <- 0.05/(nrow(pmat)*ncol(pmat))
+    #     # exclude <- apply(pmat <= exclude.crit,2,any)
+    #     # if (all(exclude)) exclude[] <- FALSE
+    #     # covmat <- cov(t(zmat[,!exclude]))
+    #     # # covmat <- cov(t(zmat))
+    #     # object$p.val <- 1-pnorm(colSums(zmat) / sqrt(sum(covmat)))
+
+    #     actual.scoremat <- object$scoremat[round(seq(from=1,to=nrow(object$scoremat),length=10)),]
+
+    #     pmat <- 1 - pchisq(actual.scoremat,df=1)
+    #     exclude.crit <- 0.20/(nrow(pmat))
+    #     exclude <- apply(pmat <= exclude.crit,2,any)
+    #     if (all(exclude)) exclude[] <- FALSE
+
+    #     pmat <- 1 - pchisq(actual.scoremat,df=1)
+    #     # Sigma <- cor(t(pmat))
+    #     Sigma <- cor(t(pmat[,!exclude]))
+    #     Z.chol <- t(base::chol(Sigma))
+
+    #     zmat <- qnorm(pchisq(ifelse(actual.scoremat>70,70,actual.scoremat),df=1))
+    #     # zmat <- qnorm(pchisq(actual.scoremat,df=1))
+    #     trans.zmat <- solve(Z.chol) %*% zmat
+    #     trans.zmat[trans.zmat < -8] <- -8
+    #     trans.zmat[trans.zmat > 8] <- 8
+    #     trans.pmat <- 1 - pnorm(trans.zmat)
+    #     chi.stat <- -2*colSums(log(trans.pmat))
+    #     object$p.val <- 1 - pchisq(chi.stat,df=nrow(zmat))
+    # }
     
     class(object) <- "CoxBoost"
     object$logplik <- predict(object,type="logplik")
@@ -419,7 +540,7 @@ predict.CoxBoost <- function(object,newdata=NULL,newtime=NULL,newstatus=NULL,sub
                 linear.predictor <- as.matrix(Matrix::tcrossprod(object$coefficients[at.step+1,nz.index,drop=FALSE],newdata[subset.index,nz.index,drop=FALSE]))
             }
         } else {
-            linear.predcitor <- matrix(0,length(at.step),length(subset.index))
+            linear.predictor <- matrix(0,length(at.step),length(subset.index))
         }
     }
     

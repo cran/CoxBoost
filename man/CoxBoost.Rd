@@ -7,8 +7,9 @@ It is especially suited for models with a large number of predictors and allows 
 }
 \usage{
 CoxBoost(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:length(time),
-         stepno=100,penalty=9*sum(status[subset]==1),stepsize.factor=1,
-         sf.scheme=c("sigmoid","linear"),pendistmat=NULL,
+         weights=NULL,stepno=100,penalty=9*sum(status[subset]==1),
+         criterion = c("pscore", "score","hpscore","hscore"),
+         stepsize.factor=1,sf.scheme=c("sigmoid","linear"),pendistmat=NULL,
          connected.index=NULL,x.is.01=FALSE,return.score=TRUE,trace=FALSE) 
 }
 \arguments{
@@ -18,14 +19,16 @@ CoxBoost(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:length(time),
 \item{unpen.index}{vector of length \code{p.unpen} with indices of mandatory covariates, where parameter estimation should be performed unpenalized.}
 \item{standardize}{logical value indicating whether covariates should be standardized for estimation. This does not apply for mandatory covariates, i.e., these are not standardized.}
 \item{subset}{a vector specifying a subset of observations to be used in the fitting process.}
+\item{weights}{optional vector of length \code{n}, for specifying weights for the individual observations.}
 \item{penalty}{penalty value for the update of an individual element of the parameter vector in each boosting step.}
+\item{criterion}{indicates the criterion to be used for selection in each boosting step. \code{"pscore"} corresponds to the penalized score statistics, \code{"score"} to the un-penalized score statistics. Different results will only be seen for un-standardized covariates (\code{"pscore"} will result in preferential selection of covariates with larger covariance), or if different penalties are used for different covariates. \code{"hpscore"} and \code{"hscore"} correspond to \code{"pscore"} and \code{"score"}. However, a heuristic is used for evaluating only a subset of covariates in each boosting step, as described in Binder et al. (2011). This can considerably speed up computation, but may lead to different results.}
 \item{stepsize.factor}{determines the step-size modification factor by which the natural step size of boosting steps should be changed after a covariate has been selected in a boosting step. The default (value \code{1}) implies constant penalties, for a value < 1 the penalty for a covariate is increased after it has been selected in a boosting step, and for a value > 1 the penalty it is decreased. If \code{pendistmat} is given, penalty updates are only performed for covariates that have at least one connection to another covariate.}
 \item{sf.scheme}{scheme for changing step sizes (via \code{stepsize.factor}). \code{"linear"} corresponds to the scheme described in Binder and Schumacher (2009b), \code{"sigmoid"} employs a sigmoid shape.}
 \item{pendistmat}{connection matrix with entries ranging between 0 and 1, with entry \code{(i,j)} indicating the certainty of the connection between covariates \code{i} and \code{j}. According to this information penalty changes due to \code{stepsize.factor} < 1 are propagated, i.e., if entry \code{(i,j)} is non-zero, the penalty for covariate \code{j} is decreased after it has been increased for covariate \code{i}, after it has been selected in a boosting step. This matrix either has to have dimension \code{(p - p.unpen) * (p - p.unpen)} or the indicices of the \code{p.connected} connected covariates have to be given in \code{connected.index}, in which case the matrix has to have dimension \code{p.connected * p.connected}.}
 \item{connected.index}{indices of the \code{p.connected} connected covariates, for which \code{pendistmat} provides the connection information for distributing changes in penalties. No overlap with \code{unpen.index} is allowed. If \code{NULL}, and a connection matrix is given, all covariates are assumed to be connected.}
 \item{stepno}{number of boosting steps (\code{m}).}
 \item{x.is.01}{logical value indicating whether (the non-mandatory part of) \code{x} contains just values 0 and 1, i.e., binary covariates. If this is the case and indicated by this argument, computations are much faster.}
-\item{return.score}{logical value indicating whether the value of the score statistic, as evaluated in each boosting step for every covariate, should be returned. The corresponding element \code{scoremat} can become very large (and needs much memory) when the number of covariates and boosting steps is large.}
+\item{return.score}{logical value indicating whether the value of the score statistic (or penalized score statistic, depending on \code{criterion}), as evaluated in each boosting step for every covariate, should be returned. The corresponding element \code{scoremat} can become very large (and needs much memory) when the number of covariates and boosting steps is large.}
 \item{trace}{logical value indicating whether progress in estimation should be indicated by printing the name of the covariate updated.}
 }
 \details{
@@ -58,6 +61,8 @@ If a group of correlated covariates has influence on the response, e.g. genes fr
 Written by Harald Binder \email{binderh@fdm.uni-freiburg.de}. 
 }
 \references{
+Binder, H., Benner, A., Bullinger, L., and Schumacher, M. (2011). Tailoring sparse multivariable regression techniques for prognostic SNP signatures. Manuscript.
+
 Binder, H., Allignol, A., Schumacher, M., and Beyersmann, J. (2009). Boosting for high-dimensional time-to-event data with competing risks. Bioinformatics, 25:890-896.
 
 Binder, H. and Schumacher, M. (2009). Incorporating pathway information into boosting estimation of high-dimensional risk prediction models. BMC Bioinformatics. 10:18.

@@ -18,6 +18,8 @@ estimPVal <- function(object,x,permute.n=10,per.covariate=FALSE,parallel=FALSE,m
     }
     stepno <- object$stepno
     penalty <- rep(object$penalty,2)
+    
+    if (stepno == 0) return(rep(NA,length(pen.index)))
 
     eval.permute <- function(actual.permute,...) {
         if (trace) cat("permutation",actual.permute,"\n")
@@ -27,8 +29,8 @@ estimPVal <- function(object,x,permute.n=10,per.covariate=FALSE,parallel=FALSE,m
         permute.res <- CoxBoost(time=time,status=status,x=actual.x,unpen.index=unpen.index,
                                 standardize=FALSE,stepno=stepno,penalty=penalty,trace=FALSE,...)
     
-        actual.score <- colMeans(permute.res$scoremat[,1:length(pen.index)])
-        null.score <- colMeans(permute.res$scoremat[,(length(pen.index)+1):ncol(permute.res$scoremat)])
+        actual.score <- colMeans(permute.res$scoremat[,1:length(pen.index),drop=FALSE])
+        null.score <- colMeans(permute.res$scoremat[,(length(pen.index)+1):ncol(permute.res$scoremat),drop=FALSE])
 
         if (per.covariate) {
             return(actual.score <= null.score)

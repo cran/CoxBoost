@@ -1,0 +1,13 @@
+e6c2e40ebdbbc93b9360ef3cd3ebfbf7 *DESCRIPTION
+7c0d0dee96496288b1c510f275c8da89 *NAMESPACE
+e4e65be3c2304c8e3ae891c8e79bc649 *R/CoxBoost.R
+ca699ad1ba2d3d09e4626f6be6a36514 *R/estimPVal.R
+e65a3f4f6e54e9c694a4eb8b20aaef8a *R/optimStepSizeFactor.R
+f5baee427db2ed530ee35cbf50118572 *changeLog
+4ddd348dbb700989e5625e23ab14dd19 *man/CoxBoost.Rd
+551f2cb1bc18e398dde1e65437e98499 *man/cv.CoxBoost.Rd
+0efb1de40264b6b9e833402e2fd63ddd *man/estimPVal.Rd
+038c961654999aeeb1a49aeffbb14da8 *man/optimCoxBoostPenalty.Rd
+eff2e9434887017d0426d6e5240906a7 *man/optimStepSizeFactor.Rd
+cc59f611ce9e67f0af804981593c950d *man/predict.CoxBoost.Rd
+00be91e552862680fba4311fe769a890 *src/find_best.c
