@@ -5,7 +5,8 @@
 Performs a K-fold cross-validation for \code{\link{CoxBoost}} in search for the optimal number of boosting steps.  
 }
 \usage{
-cv.CoxBoost(time,status,x,maxstepno=100,K=10,type=c("verweij","naive"),
+cv.CoxBoost(time,status,x,subset=1:length(time),maxstepno=100,K=10,
+			type=c("verweij","naive"),
             parallel=FALSE,upload.x=TRUE,multicore=FALSE,
             folds=NULL,trace=FALSE,\dots) 
 }
@@ -13,11 +14,12 @@ cv.CoxBoost(time,status,x,maxstepno=100,K=10,type=c("verweij","naive"),
 \item{time}{vector of length \code{n} specifying the observed times.}
 \item{status}{censoring indicator, i.e., vector of length \code{n} with entries \code{0} for censored observations and \code{1} for uncensored observations. If this vector contains elements not equal to \code{0} or \code{1}, these are taken to indicate events from a competing risk and a model for the subdistribution hazard with respect to event \code{1} is fitted (see e.g. Fine and Gray, 1999).}
 \item{x}{\code{n * p} matrix of covariates.}
+\item{subset}{a vector specifying a subset of observations to be used in the fitting process.}
 \item{maxstepno}{maximum number of boosting steps to evaluate, i.e, the returned ``optimal'' number of boosting steps will be in the range \code{[0,maxstepno]}.}
 \item{K}{number of folds to be used for cross-validation. If \code{K} is larger or equal to the number of non-zero elements in \code{status}, leave-one-out cross-validation is performed.}
 \item{type}{way of calculating the partial likelihood contribution of the observation in the hold-out folds: \code{"verweij"} uses the more appropriate method described in Verweij and van Houwelingen (1996), \code{"naive"} uses the approach where the observations that are not in the hold-out folds are ignored (often found in other R packages).}
 \item{parallel}{logical value indicating whether computations in the cross-validation folds should be performed in parallel on a compute cluster, using package \code{snowfall}. Parallelization is performed via the package \code{snowfall} and the initialization function of of this package, \code{sfInit}, should be called before calling \code{cv.CoxBoost}.}
-\item{multicore}{indicates whether computations in the cross-validation folds should be performed in parallel, using package \code{multicore}. If \code{TRUE}, package \code{multicore} is employed using the default number of cores. A value larger than \code{1} is taken to be the number of cores that should be employed.}
+\item{multicore}{indicates whether computations in the cross-validation folds should be performed in parallel, using package \code{parallel}. If \code{TRUE}, package \code{parallel} is employed using the default number of cores. A value larger than \code{1} is taken to be the number of cores that should be employed.}
 \item{upload.x}{logical value indicating whether \code{x} should/has to be uploaded to the
 compute cluster for parallel computation. Uploading this only once (using \code{sfExport(x)} from library \code{snowfall}) can save much time for large data sets.}
 \item{folds}{if not \code{NULL}, this has to be a list of length \code{K}, each element being a vector of indices of fold elements. Useful for employing the same folds for repeated runs.}
@@ -32,7 +34,7 @@ List with the following components:
 \item{folds}{list of length \code{K}, where the elements are vectors of the indices of observations in the respective folds.}
 }
 \author{
-Harald Binder \email{binderh@fdm.uni-freiburg.de}
+Harald Binder \email{binderh@uni-mainz.de}
 }
 \references{
 Verweij, P. J. M. and van Houwelingen, H. C. (1993). Cross-validation in survival analysis. Statistics in Medicine, 12(24):2305-2314.

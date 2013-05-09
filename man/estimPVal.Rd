@@ -13,7 +13,7 @@ estimPVal(object,x,permute.n=10,per.covariate=FALSE,parallel=FALSE,
 \item{permute.n}{number of permutations employed for obtaining a null distribution.}
 \item{per.covariate}{logical value indicating whether a separate null distribution should be considered for each covariate. A larger number of permutations will be needed if this is wanted.}
 \item{parallel}{logical value indicating whether computations for obtaining a null distribution via permutation should be performed in parallel on a compute cluster. Parallelization is performed via the package \code{snowfall} and the initialization function of of this package, \code{sfInit}, should be called before calling \code{estimPVal}.}
-\item{multicore}{indicates whether computations in the permuted data sets should be performed in parallel, using package \code{multicore}. If \code{TRUE}, package \code{multicore} is employed using the default number of cores. A value larger than \code{1} is taken to be the number of cores that should be employed.}
+\item{multicore}{indicates whether computations in the permuted data sets should be performed in parallel, using package \code{parallel}. If \code{TRUE}, package \code{parallel} is employed using the default number of cores. A value larger than \code{1} is taken to be the number of cores that should be employed.}
 \item{trace}{logical value indicating whether progress in estimation should be indicated by printing the number of the permutation that is currently being evaluated.}
 \item{\dots}{miscellaneous parameters for the calls to \code{\link{CoxBoost}}}
 }
@@ -24,7 +24,7 @@ As p-value estimates are based on permutations, random numbers are drawn for det
 Vector with p-value estimates, one value for each optional covariate specificed in the original call to \code{\link{CoxBoost}}.
 }
 \author{
-Harald Binder \email{binderh@fdm.uni-freiburg.de}
+Harald Binder \email{binderh@uni-mainz.de}
 }
 \references{
 Binder, H., Porzelius, C. and Schumacher, M. (2009). Rank-based p-values for sparse high-dimensional risk prediction models fitted by componentwise boosting. FDM-Preprint Nr. 101, University of Freiburg, Germany.

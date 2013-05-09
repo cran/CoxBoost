@@ -1,7 +1,10 @@
 import(survival)
 useDynLib(CoxBoost,find_best,find_best01,find_best_candidate)
 
-export(CoxBoost,cv.CoxBoost,optimCoxBoostPenalty,optimStepSizeFactor,estimPVal)
+export(CoxBoost,iCoxBoost,cvcb.control,cv.CoxBoost,optimCoxBoostPenalty,optimStepSizeFactor,estimPVal)
 S3method(predict,CoxBoost)
+S3method(predict,iCoxBoost)
 S3method(print,CoxBoost)
 S3method(summary,CoxBoost)
+S3method(plot,CoxBoost)
+S3method(coef,CoxBoost)

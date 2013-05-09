@@ -1,7 +1,16 @@
+1.4
+
+-   added a formula interface through 'iCoxBoost'
+-   added generic function 'coef' for extracting estimated coefficients
+-   added a plot routine that provides coefficient paths
+-   added support for package 'parallel' (removing support for 'multicore' and older R versions)
+-   convergence problems for unpenalized covariates now are catched
+
+
 1.3
 
 -   added option 'criterion' to allow for selection according to unpenalized scores
--   added 'cirterion="hpscore"' and 'criterion="hscore"' for heuristic evaluation
+-   added 'criterion="hpscore"' and 'criterion="hscore"' for heuristic evaluation
     of only a subset of covariates in each boosting step
 -   Fixed a bug where results from "predict" without "newdata" and "linear.predictor"
     in CoxBoost objects would have the wrong order (introduced in 1.2-1)

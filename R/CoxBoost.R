@@ -17,8 +17,9 @@ efron.weightmat <- function(time,status) {
     #   check for competing risks scenario
     if (any(status != 0 & status != 1)) {
         cens.ind <- ifelse(status == 0,1,0)
-        invcensprob <- rep(NA,length(time))
-        invcensprob[order(time)] <- summary(survival::survfit(Surv(time,cens.ind) ~ 1),times=sort(time))$surv
+        surv.res <- summary(survival::survfit(Surv(time,cens.ind) ~ 1),times=sort(time))$surv
+        invcensprob <- rep(surv.res[length(surv.res)],length(time))
+        invcensprob[order(time)[1:length(surv.res)]] <- surv.res
                 
         for (i in 1:length(uncens)) {
             current.invcens <- invcensprob[uncens][i]
@@ -42,6 +43,10 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
     if (any(is.na(x))) {
         stop("'x' may not contain missing values")        
     }    
+
+    if (length(unpen.index) >= ncol(x)) {
+        stop("All covariates are indicated as mandatory. At least one non-mandatory covariate is needed.")
+    }
 
     object <- list()
 
@@ -121,9 +126,9 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
     object$meanx <- rep(0,length(object$xnames))
     object$sdx <- rep(1,length(object$xnames))
     if (standardize) {
-        pen.sdx <- apply(x[subset,pen.index],2,sd)
+        pen.sdx <- apply(x[subset,pen.index,drop=FALSE],2,sd)
         pen.sdx <- ifelse(pen.sdx == 0,1,pen.sdx)
-        pen.meanx <- apply(x[subset,pen.index],2,mean)        
+        pen.meanx <- apply(x[subset,pen.index,drop=FALSE],2,mean)        
         x[subset,pen.index] <- scale(x[subset,pen.index],center=pen.meanx,scale=pen.sdx)
 
         object$meanx[pen.index] <- pen.meanx
@@ -157,6 +162,7 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
     uncens.C <- as.integer(uncens - 1)
     
     warnstep <- NULL
+    unpen.warn <- NULL
 
     first.score <- NULL
     presel.index <- c()
@@ -176,23 +182,35 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
                 #   calculations from step zero do not have to be repeated
                 unpen.coefficients[actual.step+1,] <- actual.unpen.beta
             } else {
-                x.bar <- (t(weightmat.times.risk) %*% unpen.x) / weightmat.times.risk.sum
-                U <- colSums(unpen.x[uncens,] - x.bar)
+                if (is.null(unpen.warn)) {
+                    x.bar <- (t(weightmat.times.risk) %*% unpen.x) / weightmat.times.risk.sum
+                    U <- colSums(unpen.x[uncens,] - x.bar)
 
-                I <- matrix(0,ncol(unpen.x),ncol(unpen.x))
-                for (i in 1:n.uncens) {
-                    x.minus.bar <- t(t(unpen.x) - x.bar[i,])        
-                    I <- I + (t(x.minus.bar*(weightmat.times.risk[,i])) %*% x.minus.bar)/weightmat.times.risk.sum[i]
+                    I <- matrix(0,ncol(unpen.x),ncol(unpen.x))
+                    for (i in 1:n.uncens) {
+                        x.minus.bar <- t(t(unpen.x) - x.bar[i,])        
+                        I <- I + (t(x.minus.bar*(weightmat.times.risk[,i])) %*% x.minus.bar)/weightmat.times.risk.sum[i]
+                    }
+
+                    try.res <- try(unpen.beta.delta <- drop(solve(I) %*% U),silent=TRUE)
+                    if (class(try.res) == "try-error") {
+                        unpen.warn <- actual.step
+                        if (actual.step == 0) {
+                            unpen.coefficients[actual.step+1,] <- 0
+                            actual.unpen.beta <- unpen.coefficients[actual.step+1,]
+                        }
+                    } else {
+                        actual.unpen.beta <- actual.unpen.beta + unpen.beta.delta
+                        unpen.coefficients[actual.step+1,] <- actual.unpen.beta
+
+                        actual.linear.predictor <- actual.linear.predictor + drop(unpen.x %*% unpen.beta.delta)
+                        actual.risk.score <- exp(drop(actual.linear.predictor))
+                        weightmat.times.risk <- weightmat*actual.risk.score
+                        weightmat.times.risk.sum <- colSums(weightmat.times.risk)
+                    }                    
+                } else {
+                    unpen.coefficients[actual.step+1,] <- actual.unpen.beta
                 }
-
-                unpen.beta.delta <- drop(solve(I) %*% U)
-                actual.unpen.beta <- actual.unpen.beta + unpen.beta.delta
-                unpen.coefficients[actual.step+1,] <- actual.unpen.beta
-
-                actual.linear.predictor <- actual.linear.predictor + drop(unpen.x %*% unpen.beta.delta)
-                actual.risk.score <- exp(drop(actual.linear.predictor))
-                weightmat.times.risk <- weightmat*actual.risk.score
-                weightmat.times.risk.sum <- colSums(weightmat.times.risk)
             }
         }
 
@@ -447,7 +465,9 @@ CoxBoost <- function(time,status,x,unpen.index=NULL,standardize=TRUE,subset=1:le
     if (trace) cat("\n")
 
     if (!is.null(warnstep)) warning(paste("potentially attempted to move towards a nonexisting maximum likelihood solution around step",warnstep))
-    
+
+    if (!is.null(unpen.warn)) warning(paste("estimation for unpenalized covariates did not converge starting at step ",unpen.warn,". Values were kept fixed and might be unreliable",sep=""))
+
     #   combine penalized and unpenalized covariates
     if (!is.null(object$unpen.index)) {
         object$p <- object$p + length(object$unpen.index)
@@ -517,6 +537,51 @@ summary.CoxBoost <- function(object,...) {
     cat("parameter estimate < 0:\n",paste(object$xnames[object$coefficients[object$stepno+1,] < 0],collapse=", "),"\n")
 }
 
+plot.CoxBoost <- function(x,line.col="dark grey",label.cex=0.6,xlab=NULL,ylab=NULL,xlim=NULL,ylim=NULL,...) {
+    if (x$stepno == 0) {
+        plot(1,type="n",xlab=xlab,ylab=ylab,...)        
+    } else {
+        if (is.null(xlab)) xlab <- "boosting step"
+        if (is.null(ylab)) ylab <- "estimated coefficients"
+
+        nz.index <- which(Matrix::colSums(abs(x$coefficients)) > 0)
+        nz.index <- nz.index[!(nz.index %in% x$unpen.index)]
+        plot.names <- x$xnames[nz.index]
+        plotmat <- as.matrix(x$coefficients[,nz.index,drop=FALSE])
+
+        if (is.null(xlim)) xlim <- c(0,x$stepno*(1+0.017*max(nchar(plot.names))))
+        if (is.null(ylim)) ylim <- range(plotmat)
+
+        plot(1,type="n",xlim=xlim,ylim=ylim,xlab=xlab,ylab=ylab,...)
+
+        if (length(nz.index) < ncol(x$coefficients) - length(x$unpen.index)) lines(c(0,x$stepno),c(0,0),col=line.col)
+
+        for (i in 1:ncol(plotmat)) {
+            lines(0:x$stepno,plotmat[,i],col=line.col)
+            text(xlim[2],plotmat[nrow(plotmat),i],plot.names[i],pos=2,cex=label.cex)
+        }
+    }
+}
+
+coef.CoxBoost <- function(object,at.step=NULL,scaled=TRUE,...) {
+    if (is.null(at.step) || length(at.step) == 1) {
+        if (is.null(at.step)) {
+            beta <- object$coefficients[nrow(object$coefficients),]            
+        } else {
+            beta <- object$coefficients[at.step+1,]
+        }
+
+        if (scaled) beta <- beta * object$sdx
+        names(beta) <- object$xnames
+    } else {
+        beta <- as.matrix(object$coefficients[at.step+1,])
+        if (scaled) beta <- t(t(beta) * object$sdx)
+        colnames(beta) <- object$xnames
+    }
+    beta
+}
+
+
 predict.CoxBoost <- function(object,newdata=NULL,newtime=NULL,newstatus=NULL,subset=NULL,at.step=NULL,times=NULL,type=c("lp","logplik","risk","CIF"),...) {
     if (is.null(at.step)) at.step <- object$stepno
 
@@ -581,10 +646,12 @@ predict.CoxBoost <- function(object,newdata=NULL,newtime=NULL,newstatus=NULL,sub
     NULL
 }
 
-cv.CoxBoost <- function(time,status,x,maxstepno=100,K=10,type=c("verweij","naive"),parallel=FALSE,upload.x=TRUE,
+cv.CoxBoost <- function(time,status,x,subset=1:length(time),maxstepno=100,K=10,type=c("verweij","naive"),parallel=FALSE,upload.x=TRUE,
                         multicore=FALSE,folds=NULL,
                         trace=FALSE,...) {
     type <- match.arg(type)
+
+    subset <- (1:length(time))[subset]
 
     if (!is.null(folds) && length(folds) != K) stop("'folds' has to be of length 'K'")
 
@@ -597,14 +664,14 @@ cv.CoxBoost <- function(time,status,x,maxstepno=100,K=10,type=c("verweij","naive
             }
         } else {
             while(TRUE) {
-                folds <- split(sample(1:nrow(x)), rep(1:K, length = nrow(x)))
+                folds <- split(sample(1:length(subset)), rep(1:K, length = length(subset)))
         
                 #   make sure there is at least one event in training and test folds respectively
                 #   Note: the Verweij approach actually could deal with folds that contain only
                 #   censored observations, but this is expected to considerably increase variability
                 #   and therefore alse prevented
-                if (!any(unlist(lapply(folds,function(fold) sum(status[fold]))) == 0) &&
-                    !any(unlist(lapply(folds,function(fold) sum(status[-fold]))) == 0)) 
+                if (!any(unlist(lapply(folds,function(fold) sum(status[subset][fold]))) == 0) &&
+                    !any(unlist(lapply(folds,function(fold) sum(status[subset][-fold]))) == 0)) 
                 {
                     break
                 }
@@ -616,17 +683,17 @@ cv.CoxBoost <- function(time,status,x,maxstepno=100,K=10,type=c("verweij","naive
     
     eval.fold <- function(actual.fold,...) {
         if (trace) cat("cv fold ",actual.fold,": ",sep="")
-        cv.fit <- CoxBoost(time=time,status=status,x=x,subset=-folds[[actual.fold]],
+        cv.fit <- CoxBoost(time=time,status=status,x=x,subset=subset[-folds[[actual.fold]]],
                            stepno=maxstepno,return.score=FALSE,trace=trace,...)
 
         if (type == "verweij") {
-            full.ploglik <- predict(cv.fit,newdata=x,newtime=time,newstatus=status,type="logplik",at.step=0:maxstepno)
-            fold.ploglik <- predict(cv.fit,newdata=x,newtime=time,newstatus=status,subset=-folds[[actual.fold]],
+            full.ploglik <- predict(cv.fit,newdata=x,newtime=time,newstatus=status,subset=subset,type="logplik",at.step=0:maxstepno)
+            fold.ploglik <- predict(cv.fit,newdata=x,newtime=time,newstatus=status,subset=subset[-folds[[actual.fold]]],
                                     type="logplik",at.step=0:maxstepno)
                                     
             return(full.ploglik - fold.ploglik)
         } else {
-            return(predict(cv.fit,newdata=x,newtime=time,newstatus=status,subset=folds[[actual.fold]],
+            return(predict(cv.fit,newdata=x,newtime=time,newstatus=status,subset=subset[folds[[actual.fold]]],
                                                  type="logplik",at.step=0:maxstepno))
         }
     }
@@ -637,20 +704,20 @@ cv.CoxBoost <- function(time,status,x,maxstepno=100,K=10,type=c("verweij","naive
         if (!require(snowfall)) {
             warning("package 'snowfall' not found, i.e., parallelization cannot be performed using this package")
         } else {
-            sfLibrary(CoxBoost)
+            snowfall::sfLibrary(CoxBoost)
             if (upload.x) {
-                sfExport("time","status","x","maxstepno","trace","type","folds")
+                snowfall::sfExport("time","status","x","maxstepno","trace","type","folds")
             } else {
-                sfExport("time","status","maxstepno","trace","type","folds")
+                snowfall::sfExport("time","status","maxstepno","trace","type","folds")
             }
-            criterion <- matrix(unlist(sfClusterApplyLB(1:length(folds),eval.fold,...)),nrow=length(folds),byrow=TRUE)                
+            criterion <- matrix(unlist(snowfall::sfClusterApplyLB(1:length(folds),eval.fold,...)),nrow=length(folds),byrow=TRUE)
             eval.success <- TRUE
         }
     } 
 
     if (!eval.success & multicore) {
-        if (!require(multicore)) {
-            warning("package 'multicore' not found, i.e., parallelization cannot be performed using this package")
+        if (!require(parallel)) {
+            warning("package 'parallel' not found, i.e., parallelization cannot be performed using this package")
         } else {
             if (multicore > 1) {
                 criterion <- matrix(unlist(mclapply(1:length(folds),eval.fold,mc.preschedule=FALSE,mc.cores=multicore,...)),nrow=length(folds),byrow=TRUE)
@@ -680,7 +747,7 @@ optimCoxBoostPenalty <- function(time,status,x,minstepno=50,maxstepno=200,start.
             parallel <- FALSE
             warning("package 'snowfall' not found, i.e., parallelization cannot be performed")
         } else {
-            sfExport("x")            
+            snowfall::sfExport("x")
         }
     }
     

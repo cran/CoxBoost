@@ -34,7 +34,7 @@ List with the following components:
 \item{optimal.step}{optimal boosting step number, i.e., with minimum mean partial log-likelihood, for step-size modification factor \code{optimal.factor}.}
 }
 \author{
-Written by Harald Binder \email{binderh@fdm.uni-freiburg.de}. 
+Written by Harald Binder \email{binderh@uni-mainz.de}. 
 }
 \references{
 Binder, H. and Schumacher, M. (2009). Incorporating pathway information into boosting estimation of high-dimensional risk prediction models. BMC Bioinformatics. 10:18.

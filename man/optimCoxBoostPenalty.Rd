@@ -29,7 +29,7 @@ The penalty parameter for \code{\link{CoxBoost}} has to be chosen only very coar
 List with element \code{penalty} containing the ``optimal'' penalty and \code{cv.res} containing the corresponding result of \code{cv.CoxBoost}.
 }
 \author{
-Written by Harald Binder \email{binderh@fdm.uni-freiburg.de}. 
+Written by Harald Binder \email{binderh@uni-mainz.de}. 
 }
 \references{
 Tutz, G. and Binder, H. (2006) Generalized additive modelling with implicit variable selection by likelihood based boosting. \emph{Biometrics}, 62:961-971.

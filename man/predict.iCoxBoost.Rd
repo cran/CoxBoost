@@ -1,18 +1,17 @@
-\name{predict.CoxBoost}
-\alias{predict.CoxBoost}
-\title{Predict method for CoxBoost fits}
+\name{predict.iCoxBoost}
+\alias{predict.iCoxBoost}
+\title{Predict method for iCoxBoost fits}
 \description{
-Obtains predictions at specified boosting steps from a CoxBoost object fitted by \code{\link{CoxBoost}}.  
+Obtains predictions at specified boosting steps from a iCoxBoost object fitted by \code{\link{iCoxBoost}}.  
 }
 \usage{
-\method{predict}{CoxBoost}(object,newdata=NULL,newtime=NULL,newstatus=NULL,
+\method{predict}{iCoxBoost}(object,newdata=NULL,
         subset=NULL,at.step=NULL,times=NULL,
         type=c("lp","logplik","risk","CIF"),\ldots)
 }
 \arguments{
 \item{object}{fitted CoxBoost object from a \code{\link{CoxBoost}} call.}
-\item{newdata}{\code{n.new * p} matrix with new covariate values. If just prediction for the training data is wanted, it can be omitted.}
-\item{newtime, newstatus}{vectors with observed time and censoring indicator (0 for censoring, 1 for no censoring, and any other values for competing events in a competing risks setting) for new observations, where prediction is wanted. Only required if predicted partial log-likelihood is wanted, i.e., if \code{type="logplik"}. This can also be omitted when prediction is only wanted for the training data, i.e., \code{newdata=NULL}.}
+\item{newdata}{data frame with new covariate values (for \code{n.new} observations). If just prediction for the training data is wanted, it can be omitted. If the predictive partial log-likelihood is wanted (\code{type=logplik}), this frame also has to contain the response information.}
 \item{subset}{an optional vector specifying a subset of observations to be used for evaluation.}
 \item{at.step}{scalar or vector of boosting step(s) at which prediction is wanted. If \code{type="risk"} is used, only one step is admissible. If no step is given, the final boosting step is used.}
 \item{times}{vector with \code{T} time points where prediction is wanted. Only needed for \code{type="risk"}}
@@ -27,39 +26,36 @@ For \code{type="risk"} or \code{type="CIF"} a \code{n.new * T} matrix with predi
 Harald Binder \email{binderh@uni-mainz.de}
 }
 \examples{
-#   Generate some survival data with 10 informative covariates 
 n <- 200; p <- 100
-beta <- c(rep(1,10),rep(0,p-10))
+beta <- c(rep(1,2),rep(0,p-2))
 x <- matrix(rnorm(n*p),n,p)
+actual.data <- as.data.frame(x)
 real.time <- -(log(runif(n)))/(10*exp(drop(x \%*\% beta)))
 cens.time <- rexp(n,rate=1/10)
-status <- ifelse(real.time <= cens.time,1,0)
-obs.time <- ifelse(real.time <= cens.time,real.time,cens.time)
+actual.data$status <- ifelse(real.time <= cens.time,1,0)
+actual.data$time <- ifelse(real.time <= cens.time,real.time,cens.time)
 
 #   define training and test set
 
 train.index <- 1:100
 test.index <- 101:200
 
-#   Fit CoxBoost to the training data
+#   Fit a Cox proportional hazards model by iCoxBoost
 
-cbfit <- CoxBoost(time=obs.time[train.index],status=status[train.index],
-                  x=x[train.index,],stepno=300,penalty=100) 
+\donttest{cbfit <- iCoxBoost(Surv(time,status) ~ .,data=actual.data[train.index,],
+				   stepno=300,cv=FALSE)}
 
 #   mean partial log-likelihood for test set in every boosting step
 
-step.logplik <- predict(cbfit,newdata=x[test.index,],
-                        newtime=obs.time[test.index],
-                        newstatus=status[test.index],
+\donttest{step.logplik <- predict(cbfit,newdata=actual.data[test.index,],
                         at.step=0:300,type="logplik")
 
-plot(step.logplik)
+plot(step.logplik)}
 
 #   names of covariates with non-zero coefficients at boosting step
 #   with maximal test set partial log-likelihood
 
-print(cbfit$xnames[cbfit$coefficients[which.max(step.logplik),] != 0])
-
+\donttest{print(coef(cbfit,at.step=which.max(step.logplik)-1))}
 
 }
 \keyword{models} \keyword{regression} \keyword{survial}
