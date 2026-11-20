@@ -1,7 +1,7 @@
 Package: CoxBoost
 Title: Cox Models by Likelihood Based Boosting for a Single Survival
         Endpoint or Competing Risks
-Version: 1.5.2
+Version: 1.5.3
 Authors@R: c(
     person("John", "Zobolas", , "bblodfon@gmail.com", role = c("cre", "aut"),
            comment = c(ORCID = "0000-0002-3609-8674")),
@@ -18,14 +18,14 @@ Depends: R (>= 3.6.0)
 Imports: Matrix, survival
 Suggests: parallel, prodlim, snowfall
 Encoding: UTF-8
-Config/roxygen2/version: 8.1.0
+Config/roxygen2/version: 8.1.1
 URL: https://github.com/binderh/CoxBoost
 BugReports: https://github.com/binderh/CoxBoost/issues
 NeedsCompilation: yes
-Packaged: 2026-09-24 16:08:56 UTC; john
+Packaged: 2026-11-20 17:08:20 UTC; john
 Author: John Zobolas [cre, aut] (ORCID:
     <https://orcid.org/0000-0002-3609-8674>),
   Harald Binder [aut] (ORCID: <https://orcid.org/0000-0002-5666-8662>)
 Maintainer: John Zobolas <bblodfon@gmail.com>
 Repository: CRAN
-Date/Publication: 2026-09-24 17:00:07 UTC
+Date/Publication: 2026-11-20 19:00:02 UTC
